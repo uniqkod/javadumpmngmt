@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: memory-leak-demo
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-leak-app
+  namespace: memory-leak-demo
+  labels:
+    app: memory-leak-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-leak-app
+  template:
+    metadata:
+      labels:
+        app: memory-leak-app
+    spec:
+      initContainers:
+      - name: wait-for-volume-manager
+        image: busybox:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for dump volume manager to be ready..."
+          while [ ! -f /mnt/dump/.ready ]; do
+            echo "Volume manager not ready yet, waiting..."
+            sleep 2
+          done
+          echo "Volume manager is ready, proceeding with application startup"
+        volumeMounts:
+        - name: host-dumps
+          mountPath: /mnt/dump
+          readOnly: true
+      containers:
+      - name: memory-leak-app
+        image: memory-leak-demo:1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: JAVA_OPTS
+          value: "-Xmx256m -Xms128m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dumps/heap_dump_$(date +%Y%m%d_%H%M%S).hprof -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/dumps/gc.log"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: heap-dumps
+          mountPath: /dumps
+        - name: host-dumps
+          mountPath: /mnt/dump
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: heap-dumps
+        hostPath:
+          path: /mnt/dump/memory-leak-demo
+          type: DirectoryOrCreate
+      - name: host-dumps
+        hostPath:
+          path: /mnt/dump
+          type: Directory
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: memory-leak-service
+  namespace: memory-leak-demo
+  labels:
+    app: memory-leak-app
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: memory-leak-app
