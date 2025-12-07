@@ -56,12 +56,26 @@ spec:
           # Create mount point on host if it doesn't exist
           mkdir -p /host/mnt/dump
           
+          # Check if already mounted (happens on restart)
+          if mountpoint -q /host/mnt/dump; then
+            echo "WARNING: /host/mnt/dump is already a mountpoint"
+            echo "Attempting to unmount existing mount..."
+            umount /host/mnt/dump || echo "Unmount failed, will try to mount anyway"
+          fi
+          
           # Mount the PVC storage to host path using bind mount
           if mountpoint -q /pv-storage; then
             echo "PV is mounted at /pv-storage"
             echo "Creating bind mount to /host/mnt/dump..."
             mount --bind /pv-storage /host/mnt/dump
-            echo "Bind mount created successfully"
+            
+            # Verify mount succeeded
+            if mountpoint -q /host/mnt/dump; then
+              echo "Bind mount created successfully"
+            else
+              echo "ERROR: Bind mount failed"
+              exit 1
+            fi
           else
             echo "ERROR: PV not mounted at /pv-storage"
             exit 1
@@ -82,7 +96,22 @@ spec:
           echo "ready" > /host/mnt/dump/.ready
           
           echo "Volume manager running. Keeping pod alive..."
-          tail -f /dev/null
+          
+          # Monitor mount point and recreate if lost
+          while true; do
+            sleep 30
+            if ! mountpoint -q /host/mnt/dump; then
+              echo "WARNING: Mount point lost! Attempting to remount..."
+              mount --bind /pv-storage /host/mnt/dump
+              if mountpoint -q /host/mnt/dump; then
+                echo "Remount successful"
+                echo "ready" > /host/mnt/dump/.ready
+              else
+                echo "ERROR: Remount failed"
+                rm -f /host/mnt/dump/.ready 2>/dev/null || true
+              fi
+            fi
+          done
         resources:
           requests:
             cpu: 50m
@@ -106,9 +135,17 @@ spec:
             command:
             - sh
             - -c
-            - test -f /host/mnt/dump/.ready
+            - test -f /host/mnt/dump/.ready && mountpoint -q /host/mnt/dump
           initialDelaySeconds: 5
           periodSeconds: 5
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - mountpoint -q /host/mnt/dump
+          initialDelaySeconds: 10
+          periodSeconds: 30
       volumes:
       - name: host-mnt
         hostPath:
