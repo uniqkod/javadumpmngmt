@@ -780,12 +780,20 @@ management.metrics.export.prometheus.enabled=true
 | HealthController.java | REST endpoints | 35 |
 | application.properties | Spring Boot configuration | 7 |
 | Dockerfile | Container image definition | 22 |
-| daemonset-volume.yaml | PriorityClass, PVC (10Gi), and DaemonSet with readiness | 115 |
-| deployment.yaml | Kubernetes deployment with init container | 100 |
-| README.md | Quick start documentation | 120+ |
-| bidirectional-mount.md | Detailed volume architecture explanation | 350+ |
-| pod-priority.md | Pod priority and startup order explanation | 309 |
-| SETUP_STEPS.md | Complete step-by-step guide | 700+ |
+| openshift-rbac.yaml | SCC, ServiceAccount, RBAC | 76 |
+| daemonset-volume.yaml | PriorityClass, PVC, Volume Manager DaemonSet | 140 |
+| s3-uploader-daemonset.yaml | ConfigMap, Secret, S3 Uploader DaemonSet | 317 |
+| deployment.yaml | Kubernetes deployment with init container | 107 |
+| openshift-route.yaml | OpenShift Route with TLS | 22 |
+| README.md | Quick start documentation | 150+ |
+| OPENSHIFT.md | OpenShift-specific deployment guide | 343 |
+| bidirectional-mount.md | Volume architecture explanation | 413 |
+| pod-priority.md | Pod priority and startup order | 309 |
+| mount-recovery.md | Bind mount recovery guide | 384 |
+| s3-uploader.md | S3 uploader configuration guide | 550 |
+| ocp-updates-summary.md | OpenShift migration summary | 543 |
+| session-summary.md | Complete session features summary | 723 |
+| SETUP_STEPS.md | Complete step-by-step guide | 900+ |
 | .dockerignore | Docker build exclusions | 10 |
 | .gitignore | Git exclusions | 9 |
 
@@ -793,32 +801,44 @@ management.metrics.export.prometheus.enabled=true
 
 ## Conclusion
 
+## Step 19: Summary
+
 This completes all steps from project creation through deployment, monitoring, heap dump retrieval, and cleanup. The application demonstrates:
 - Spring Boot scheduled tasks
 - Memory leak patterns
 - OutOfMemoryError handling
 - Heap dump generation
-- Kubernetes deployment with DaemonSet
+- OpenShift deployment with SCC and RBAC
+- DaemonSet with privileged operations
 - PersistentVolume (10Gi) with default StorageClass
 - Bidirectional mount propagation for host path access
 - Pod priority classes (1,000,000) for scheduling control
 - Init containers for dependency management
-- Readiness probes with marker files
+- Readiness and liveness probes
+- Bind mount recovery and monitoring
+- **Automatic S3 backup with file stability detection**
 - Health monitoring
 - Container resource management
 - Advanced volume management techniques
 
 **Storage Architecture:**
 - PersistentVolumeClaim: 10Gi using default storage class
-- DaemonSet: Mounts PVC and binds to host `/mnt/dump`
+- Volume Manager DaemonSet: Mounts PVC and binds to host `/mnt/dump`
 - Application: Writes to `/dumps` → backed by PV via host path
-- Access: Via kubectl, host SSH, or DaemonSet
+- S3 Uploader DaemonSet: Monitors `/mnt/dump` and uploads to S3
+- Access: Via kubectl/oc, host SSH, DaemonSet, or S3
 
 **Startup Order Guarantee:**
-- PriorityClass: 1,000,000 for DaemonSet (vs default 0 for app)
-- Readiness marker: DaemonSet creates `.ready` file
-- Init container: Application waits for `.ready` file
-- Result: DaemonSet always ready before application starts
+- PriorityClass: 1,000,000 for DaemonSets (vs default 0 for app)
+- Readiness marker: Volume manager creates `.ready` file
+- Init containers: Application and S3 uploader wait for `.ready` file
+- Result: DaemonSets always ready before application starts
+
+**Automatic Features:**
+- Mount recovery: Remounts within 30 seconds if lost
+- S3 backup: Uploads completed heap dumps with metadata
+- File stability: Waits until files stop growing before upload
+- Duplicate prevention: Tracks uploaded files
 
 **Created:** 2025-12-07T18:59:36.826Z  
-**Updated:** 2025-12-07T19:33:36.130Z
+**Updated:** 2025-12-08T07:33:29.954Z
