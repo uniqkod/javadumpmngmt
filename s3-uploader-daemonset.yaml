@@ -3,6 +3,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: s3-uploader-config
+  namespace: memory-leak-demo
   labels:
     app: s3-uploader
 data:
@@ -28,23 +29,8 @@ stringData:
   S3_ENDPOINT_URL: ""  # e.g., "https://s3.example.com"
 
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: heap-dump-s3-uploader
-  labels:
-    app: s3-uploader
-spec:
-  clusterIP: None
-  selector:
-    app: s3-uploader
-  ports:
-  - port: 80
-    name: placeholder
-
----
 apiVersion: apps/v1
-kind: StatefulSet
+kind: DaemonSet
 metadata:
   name: heap-dump-s3-uploader
   labels:
@@ -52,8 +38,6 @@ metadata:
   annotations:
     openshift.io/scc: restricted
 spec:
-  serviceName: heap-dump-s3-uploader
-  replicas: 1
   selector:
     matchLabels:
       app: s3-uploader
@@ -64,16 +48,6 @@ spec:
     spec:
       serviceAccountName: dump-volume-manager
       priorityClassName: dump-volume-critical
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: app
-                operator: In
-                values:
-                - s3-uploader
-            topologyKey: kubernetes.io/hostname
       initContainers:
       - name: wait-for-volume-manager
         image: busybox:latest
