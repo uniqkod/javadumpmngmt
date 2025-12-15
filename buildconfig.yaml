@@ -1,0 +1,48 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: memory-leak-demo
+  namespace: heapdump
+  labels:
+    app: memory-leak-demo
+    app.kubernetes.io/name: memory-leak-demo
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/your-org/javadumpmngmt.git
+      ref: main
+    contextDir: .
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+      noCache: false
+      forcePull: false
+  output:
+    to:
+      kind: ImageStreamTag
+      name: memory-leak-demo:latest
+  triggers:
+  - type: ConfigChange
+  - type: ImageChange
+  - type: GitHub
+    github:
+      secret: github-webhook-secret
+  - type: Generic
+    generic:
+      secret: generic-webhook-secret
+  runPolicy: Serial
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: memory-leak-demo
+  namespace: heapdump
+  labels:
+    app: memory-leak-demo
+spec:
+  lookupPolicy:
+    local: false
