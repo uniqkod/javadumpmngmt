@@ -14,7 +14,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: memory-leak-app
-  namespace: memory-leak-demo
   labels:
     app: memory-leak-app
     app.kubernetes.io/name: memory-leak-app
@@ -108,7 +107,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: memory-leak-service
-  namespace: memory-leak-demo
   labels:
     app: memory-leak-app
 spec:
