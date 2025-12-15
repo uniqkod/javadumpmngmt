@@ -19,8 +19,8 @@ OpenShift uses SCC instead of Pod Security Policies to control security contexts
 ### 2. Removed Restrictions
 
 OpenShift restricts certain capabilities:
-- ❌ Removed `hostNetwork: true` from DaemonSet
-- ❌ Removed `hostPID: true` from DaemonSet
+- ❌ Removed `hostNetwork: true` from StatefulSet
+- ❌ Removed `hostPID: true` from StatefulSet
 - ✅ Added explicit `SYS_ADMIN` capability for bind mounts
 
 ### 3. OpenShift Routes
@@ -67,14 +67,14 @@ oc get sa -n memory-leak-demo dump-volume-manager
 oc describe scc dump-volume-privileged | grep -A 5 Users
 ```
 
-### Step 2: Deploy DaemonSet
+### Step 2: Deploy StatefulSet
 
 ```bash
-# Deploy PVC, PriorityClass, and DaemonSet
-oc apply -f daemonset-volume.yaml
+# Deploy PVC, PriorityClass, and StatefulSet
+oc apply -f statefulset-volume.yaml
 
-# Verify DaemonSet
-oc get daemonset -n memory-leak-demo
+# Verify StatefulSet
+oc get statefulset -n memory-leak-demo
 oc get pods -n memory-leak-demo -l app=dump-volume-manager
 
 # Check which SCC is being used
@@ -129,7 +129,7 @@ allowedCapabilities:
 ```
 
 **Why these permissions?**
-- `allowHostDirVolumePlugin`: DaemonSet needs to mount host path `/mnt`
+- `allowHostDirVolumePlugin`: StatefulSet needs to mount host path `/mnt`
 - `allowPrivilegedContainer`: Bind mount requires elevated privileges
 - `SYS_ADMIN`: System capability needed for mount system call
 
@@ -179,8 +179,8 @@ oc logs -f -n memory-leak-demo deployment/memory-leak-app
 # Check init container
 oc logs -n memory-leak-demo -l app=memory-leak-app -c wait-for-volume-manager
 
-# View DaemonSet logs
-oc logs -n memory-leak-demo daemonset/dump-volume-manager
+# View StatefulSet logs
+oc logs -n memory-leak-demo statefulset/dump-volume-manager
 ```
 
 ### Check Heap Dumps
@@ -193,8 +193,8 @@ oc exec -n memory-leak-demo $POD -- ls -lh /dumps/
 # Copy heap dump
 oc cp -n memory-leak-demo $POD:/dumps/heap_dump.hprof ./heap_dump.hprof
 
-# Access via DaemonSet
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+# Access via StatefulSet
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   ls -lh /host/mnt/dump/memory-leak-demo/
 ```
 
@@ -219,7 +219,7 @@ oc describe scc dump-volume-privileged
 oc get clusterrolebinding dump-volume-scc-binding -o yaml
 ```
 
-### DaemonSet Not Starting
+### StatefulSet Not Starting
 
 **Check SCC assignment:**
 ```bash
@@ -231,7 +231,7 @@ oc get events -n memory-leak-demo --sort-by='.lastTimestamp'
 ```
 
 **Common issues:**
-- ServiceAccount not assigned to DaemonSet spec
+- ServiceAccount not assigned to StatefulSet spec
 - SCC not properly bound to ServiceAccount
 - Insufficient permissions (cluster-admin needed to create SCC)
 
@@ -242,7 +242,7 @@ oc get events -n memory-leak-demo --sort-by='.lastTimestamp'
 oc logs -n memory-leak-demo -l app=memory-leak-app -c wait-for-volume-manager
 
 # Check if .ready file exists
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   cat /host/mnt/dump/.ready
 ```
 
@@ -262,7 +262,7 @@ oc run curl-test --rm -i --tty --image=curlimages/curl -- \
 
 ### 1. Least Privilege
 
-The DaemonSet requires elevated privileges for bind mounts. In production:
+The StatefulSet requires elevated privileges for bind mounts. In production:
 - Use dedicated namespace
 - Limit SCC usage to specific ServiceAccounts
 - Regularly audit SCC assignments
@@ -308,7 +308,7 @@ oc create quota memory-leak-quota -n memory-leak-demo \
 # Delete application resources
 oc delete -f openshift-route.yaml
 oc delete -f deployment.yaml
-oc delete -f daemonset-volume.yaml
+oc delete -f statefulset-volume.yaml
 
 # Delete RBAC and SCC (cluster-admin required)
 oc delete -f openshift-rbac.yaml

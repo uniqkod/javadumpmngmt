@@ -2,7 +2,7 @@
 
 ## Overview
 
-The S3 Uploader DaemonSet automatically monitors the `/mnt/dump` shared folder and uploads completed heap dump files to an S3 bucket. It runs on every node alongside the volume manager DaemonSet.
+The S3 Uploader StatefulSet automatically monitors the `/mnt/dump` shared folder and uploads completed heap dump files to an S3 bucket. It runs on every node alongside the volume manager StatefulSet.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ The S3 Uploader DaemonSet automatically monitors the `/mnt/dump` shared folder a
 │                         Kubernetes Node                          │
 │                                                                   │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │  DaemonSet: dump-volume-manager (Priority: High)           │ │
+│  │  StatefulSet: dump-volume-manager (Priority: High)           │ │
 │  │  - Mounts PVC to /mnt/dump                                  │ │
 │  │  - Creates .ready marker                                    │ │
 │  └────────────────────────────────────────────────────────────┘ │
@@ -27,7 +27,7 @@ The S3 Uploader DaemonSet automatically monitors the `/mnt/dump` shared folder a
 │         │ Watches                            │ Writes             │
 │         ▼                                    │                    │
 │  ┌─────────────────────┐         ┌─────────────────────────┐   │
-│  │  DaemonSet:         │         │  Deployment:            │   │
+│  │  StatefulSet:         │         │  Deployment:            │   │
 │  │  s3-uploader        │         │  memory-leak-app        │   │
 │  │                     │         │                         │   │
 │  │  - Wait for .ready  │         │  - Wait for .ready      │   │
@@ -83,7 +83,7 @@ S3_ENDPOINT_URL: ""  # For S3-compatible storage (MinIO, etc.)
 
 1. **Volume Manager** must be running:
    ```bash
-   oc get daemonset -n memory-leak-demo dump-volume-manager
+   oc get statefulset -n memory-leak-demo dump-volume-manager
    # Should show DESIRED = CURRENT = READY
    ```
 
@@ -118,8 +118,8 @@ S3_ENDPOINT_URL: ""  # For S3-compatible storage (MinIO, etc.)
 
 **Option A: Edit the YAML file**
 ```bash
-# Edit s3-uploader-daemonset.yaml
-vi s3-uploader-daemonset.yaml
+# Edit s3-uploader-statefulset.yaml
+vi s3-uploader-statefulset.yaml
 
 # Update the Secret section with real credentials
 ```
@@ -136,20 +136,20 @@ oc create secret generic s3-credentials \
 
 **Option C: Use IRSA (AWS) or Workload Identity (GCP)**
 ```yaml
-# Add to DaemonSet spec
+# Add to StatefulSet spec
 serviceAccountName: s3-uploader-sa
 annotations:
   eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/s3-uploader-role
 ```
 
-### Step 2: Deploy the DaemonSet
+### Step 2: Deploy the StatefulSet
 
 ```bash
-# Deploy ConfigMap, Secret, and DaemonSet
-oc apply -f s3-uploader-daemonset.yaml
+# Deploy ConfigMap, Secret, and StatefulSet
+oc apply -f s3-uploader-statefulset.yaml
 
 # Verify deployment
-oc get daemonset -n memory-leak-demo heap-dump-s3-uploader
+oc get statefulset -n memory-leak-demo heap-dump-s3-uploader
 oc get pods -n memory-leak-demo -l app=s3-uploader
 ```
 
@@ -250,14 +250,14 @@ Cleans up state files older than 7 days.
 
 ## Monitoring
 
-### Check DaemonSet Status
+### Check StatefulSet Status
 
 ```bash
 # View all S3 uploader pods
 oc get pods -n memory-leak-demo -l app=s3-uploader -o wide
 
 # Check which nodes have the uploader
-oc get daemonset -n memory-leak-demo heap-dump-s3-uploader
+oc get statefulset -n memory-leak-demo heap-dump-s3-uploader
 ```
 
 ### View Logs
@@ -341,11 +341,11 @@ rm -f "${file}"
 oc logs -n memory-leak-demo -l app=s3-uploader -c wait-for-volume-manager
 
 # Check if volume manager is ready
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   cat /host/mnt/dump/.ready
 ```
 
-**Solution:** Ensure volume manager DaemonSet is running and healthy.
+**Solution:** Ensure volume manager StatefulSet is running and healthy.
 
 ### Issue: S3 Connection Failed
 
@@ -380,7 +380,7 @@ oc logs -n memory-leak-demo -l app=s3-uploader | grep "Scanning"
 oc logs -n memory-leak-demo -l app=s3-uploader | grep "File stable"
 
 # List files in mount
-oc exec -n memory-leak-demo daemonset/heap-dump-s3-uploader -- \
+oc exec -n memory-leak-demo statefulset/heap-dump-s3-uploader -- \
   find /mnt/dump -name "*.hprof" -ls
 ```
 
@@ -520,30 +520,30 @@ def lambda_handler(event, context):
 ## Cleanup
 
 ```bash
-# Delete DaemonSet
-oc delete -f s3-uploader-daemonset.yaml
+# Delete StatefulSet
+oc delete -f s3-uploader-statefulset.yaml
 
 # Or delete individual resources
-oc delete daemonset -n memory-leak-demo heap-dump-s3-uploader
+oc delete statefulset -n memory-leak-demo heap-dump-s3-uploader
 oc delete configmap -n memory-leak-demo s3-uploader-config
 oc delete secret -n memory-leak-demo s3-credentials
 ```
 
 ## Summary
 
-The S3 Uploader DaemonSet provides:
+The S3 Uploader StatefulSet provides:
 
 ✅ **Automatic backup** - All heap dumps automatically uploaded to S3  
 ✅ **Zero configuration** - Works out of the box with default settings  
 ✅ **Node-aware** - Tracks which node generated each dump  
 ✅ **Resilient** - Survives restarts and network issues  
 ✅ **Efficient** - Low resource usage, smart file stability detection  
-✅ **Harmonious** - Works seamlessly with volume manager DaemonSet  
+✅ **Harmonious** - Works seamlessly with volume manager StatefulSet  
 
 ---
 
 **Created:** 2025-12-08T06:45:56.773Z  
 **Branch:** ocp  
 **Related Files:**
-- `s3-uploader-daemonset.yaml` - DaemonSet, ConfigMap, Secret
-- `daemonset-volume.yaml` - Volume manager DaemonSet (dependency)
+- `s3-uploader-statefulset.yaml` - StatefulSet, ConfigMap, Secret
+- `statefulset-volume.yaml` - Volume manager StatefulSet (dependency)

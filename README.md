@@ -10,12 +10,12 @@ A Spring Boot application that deliberately causes memory leaks to demonstrate O
 - Automatic heap dump generation on OutOfMemoryError
 - Health check endpoints
 - PersistentVolume (10Gi) for storing heap dumps
-- DaemonSet with bidirectional mount for host path access
-- **Automatic S3 backup** - Second DaemonSet uploads heap dumps to S3
+- StatefulSet with bidirectional mount for host path access
+- **Automatic S3 backup** - Second StatefulSet uploads heap dumps to S3
 - OpenShift SecurityContextConstraints (SCC) for privileged operations
 - OpenShift Route with TLS termination
 - ServiceAccount with proper RBAC
-- Pod priority to guarantee DaemonSet runs before application
+- Pod priority to guarantee StatefulSet runs before application
 - Init container to ensure storage readiness
 - **Bind mount recovery** - Automatic remount if volume manager restarts
 - GC logging enabled
@@ -53,31 +53,31 @@ oc apply -f openshift-rbac.yaml
 oc get scc dump-volume-privileged
 oc get sa -n memory-leak-demo dump-volume-manager
 
-# Step 2: Deploy DaemonSet (creates PriorityClass, PVC, and mounts to /mnt/dump)
-oc apply -f daemonset-volume.yaml
+# Step 2: Deploy StatefulSet (creates PriorityClass, PVC, and mounts to /mnt/dump)
+oc apply -f statefulset-volume.yaml
 
-# Verify DaemonSet is running and ready
-oc get daemonset -n memory-leak-demo
+# Verify StatefulSet is running and ready
+oc get statefulset -n memory-leak-demo
 oc get pvc -n memory-leak-demo
 oc get priorityclass dump-volume-critical
 
 # Step 3: (Optional) Deploy S3 Uploader for automatic backup
 # Edit credentials first
-vi s3-uploader-daemonset.yaml
+vi s3-uploader-statefulset.yaml
 
-oc apply -f s3-uploader-daemonset.yaml
+oc apply -f s3-uploader-statefulset.yaml
 
 # Verify S3 uploader
-oc get daemonset -n memory-leak-demo heap-dump-s3-uploader
+oc get statefulset -n memory-leak-demo heap-dump-s3-uploader
 oc logs -n memory-leak-demo -l app=s3-uploader
 
-# Step 4: Deploy the application (will wait for DaemonSet via init container)
+# Step 4: Deploy the application (will wait for StatefulSet via init container)
 oc apply -f deployment.yaml
 
 # Check the deployment status
 oc get pods -n memory-leak-demo
 
-# Check init container (should complete quickly if DaemonSet is ready)
+# Check init container (should complete quickly if StatefulSet is ready)
 oc logs -n memory-leak-demo -l app=memory-leak-app -c wait-for-volume-manager
 
 # Watch the application logs
@@ -100,8 +100,8 @@ oc exec -n memory-leak-demo $POD_NAME -- ls -lh /dumps/
 # Copy heap dump to local machine
 oc cp -n memory-leak-demo $POD_NAME:/dumps/heap_dump.hprof ./heap_dump.hprof
 
-# Alternative: Access from DaemonSet
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+# Alternative: Access from StatefulSet
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   ls -lh /host/mnt/dump/memory-leak-demo/
 
 # If S3 uploader is enabled, check S3 bucket
@@ -136,15 +136,15 @@ oc delete namespace memory-leak-demo
 The application uses a multi-tier approach with guaranteed startup order:
 
 1. **SecurityContextConstraints & RBAC** (`openshift-rbac.yaml`):
-   - SCC: `dump-volume-privileged` for DaemonSet privileged operations
+   - SCC: `dump-volume-privileged` for StatefulSet privileged operations
    - ServiceAccount: `dump-volume-manager`
    - ClusterRole & ClusterRoleBinding for SCC usage
 
-2. **PriorityClass** (`daemonset-volume.yaml`):
+2. **PriorityClass** (`statefulset-volume.yaml`):
    - Priority value: 1,000,000 (high priority)
-   - Ensures DaemonSets are scheduled before application pods
+   - Ensures StatefulSets are scheduled before application pods
 
-3. **Volume Manager DaemonSet** (`daemonset-volume.yaml`):
+3. **Volume Manager StatefulSet** (`statefulset-volume.yaml`):
    - Uses ServiceAccount with SCC permissions
    - Creates a 10Gi PersistentVolumeClaim
    - Mounts PVC to `/pv-storage` in container
@@ -153,7 +153,7 @@ The application uses a multi-tier approach with guaranteed startup order:
    - Monitors mount every 30 seconds with auto-recovery
    - Runs on every node with high priority
 
-4. **S3 Uploader DaemonSet** (`s3-uploader-daemonset.yaml`) - *Optional*:
+4. **S3 Uploader StatefulSet** (`s3-uploader-statefulset.yaml`) - *Optional*:
    - Waits for volume manager `.ready` marker via init container
    - Monitors `/mnt/dump` recursively for `.hprof` files
    - Detects file stability (waits until file stops growing)

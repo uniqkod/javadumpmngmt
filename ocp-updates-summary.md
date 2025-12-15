@@ -20,7 +20,7 @@ Complete RBAC and SecurityContextConstraints configuration for OpenShift.
 **Contents:**
 - **ServiceAccount**: `dump-volume-manager`
   - Required for SCC binding
-  - Used by DaemonSet pods
+  - Used by StatefulSet pods
 
 - **SecurityContextConstraints**: `dump-volume-privileged`
   - Allows privileged containers
@@ -33,10 +33,10 @@ Complete RBAC and SecurityContextConstraints configuration for OpenShift.
 
 - **ClusterRoleBinding**: `dump-volume-scc-binding`
   - Binds ServiceAccount to ClusterRole
-  - Enables DaemonSet to use privileged SCC
+  - Enables StatefulSet to use privileged SCC
 
 **Why needed:**
-OpenShift uses SCC (Security Context Constraints) instead of Pod Security Policies. The DaemonSet needs privileged access for bind mounting the PersistentVolume to the host path.
+OpenShift uses SCC (Security Context Constraints) instead of Pod Security Policies. The StatefulSet needs privileged access for bind mounting the PersistentVolume to the host path.
 
 ---
 
@@ -66,7 +66,7 @@ Comprehensive OpenShift-specific deployment and troubleshooting guide.
 3. SecurityContextConstraints details
 4. Storage class configuration
 5. Monitoring and logging with OpenShift Console and CLI
-6. Troubleshooting guide (SCC issues, DaemonSet, Routes)
+6. Troubleshooting guide (SCC issues, StatefulSet, Routes)
 7. Security considerations
 8. Cleanup instructions
 9. Comparison table: Kubernetes vs OpenShift
@@ -79,18 +79,18 @@ OpenShift has significant differences from vanilla Kubernetes. Users need specif
 
 ## Modified Files
 
-### 1. `daemonset-volume.yaml`
+### 1. `statefulset-volume.yaml`
 
 **Changes:**
 
 #### Removed (Security Restrictions)
 ```yaml
-# Removed from DaemonSet spec
+# Removed from StatefulSet spec
 hostNetwork: true
 hostPID: true
 ```
 
-**Reason:** OpenShift restricts `hostNetwork` and `hostPID` for security. The DaemonSet can still perform bind mounts without these.
+**Reason:** OpenShift restricts `hostNetwork` and `hostPID` for security. The StatefulSet can still perform bind mounts without these.
 
 #### Added (ServiceAccount)
 ```yaml
@@ -109,7 +109,7 @@ metadata:
     openshift.io/scc: dump-volume-privileged
 ```
 
-**Reason:** Documents which SCC the DaemonSet should use. Helps with debugging SCC assignments.
+**Reason:** Documents which SCC the StatefulSet should use. Helps with debugging SCC assignments.
 
 #### Added (Labels)
 ```yaml
@@ -243,13 +243,13 @@ Memory Leak Demo Application - OpenShift
 #### Updated Deployment Commands
 ```bash
 # Before (Kubernetes)
-kubectl apply -f daemonset-volume.yaml
+kubectl apply -f statefulset-volume.yaml
 kubectl logs -f deployment/memory-leak-app
 
 # After (OpenShift)
 oc login -u admin
 oc apply -f openshift-rbac.yaml
-oc apply -f daemonset-volume.yaml
+oc apply -f statefulset-volume.yaml
 oc logs -f deployment/memory-leak-app
 ```
 
@@ -278,7 +278,7 @@ Added SCC & RBAC as the first tier:
 
 ```markdown
 1. **SecurityContextConstraints & RBAC** (`openshift-rbac.yaml`):
-   - SCC: `dump-volume-privileged` for DaemonSet privileged operations
+   - SCC: `dump-volume-privileged` for StatefulSet privileged operations
    - ServiceAccount: `dump-volume-manager`
    - ClusterRole & ClusterRoleBinding for SCC usage
 ```
@@ -318,14 +318,14 @@ See documentation:
 ## Deployment Order Comparison
 
 ### Kubernetes (master branch)
-1. Apply DaemonSet (creates PVC, PriorityClass)
+1. Apply StatefulSet (creates PVC, PriorityClass)
 2. Apply Deployment
 3. Access via port-forward or NodePort
 
 ### OpenShift (ocp branch)
 1. Login as cluster-admin
 2. Apply RBAC/SCC (`openshift-rbac.yaml`)
-3. Apply DaemonSet (creates PVC, PriorityClass)
+3. Apply StatefulSet (creates PVC, PriorityClass)
 4. Apply Deployment
 5. Apply Route (`openshift-route.yaml`)
 6. Access via HTTPS URL
@@ -351,7 +351,7 @@ See documentation:
 - Bind mount still works with SCC permissions
 
 ### 3. ServiceAccount Isolation
-- Dedicated ServiceAccount for DaemonSet
+- Dedicated ServiceAccount for StatefulSet
 - Principle of least privilege
 - RBAC-based SCC access
 
@@ -369,10 +369,10 @@ Before deploying to production OpenShift:
 - [ ] Verify cluster-admin access for SCC creation
 - [ ] Check default storage class exists
 - [ ] Test SCC assignment to ServiceAccount
-- [ ] Verify DaemonSet can create bind mounts
+- [ ] Verify StatefulSet can create bind mounts
 - [ ] Confirm Route is accessible externally
 - [ ] Test heap dump generation and retrieval
-- [ ] Verify init container waits for DaemonSet
+- [ ] Verify init container waits for StatefulSet
 - [ ] Check logs in OpenShift Console
 - [ ] Test application OOM and restart behavior
 - [ ] Verify PVC persists across pod restarts
@@ -404,7 +404,7 @@ If you have the application running on vanilla Kubernetes and want to migrate to
 4. **Deploy with new manifests:**
    ```bash
    oc apply -f openshift-rbac.yaml
-   oc apply -f daemonset-volume.yaml
+   oc apply -f statefulset-volume.yaml
    oc apply -f deployment.yaml
    oc apply -f openshift-route.yaml
    ```
@@ -430,7 +430,7 @@ If you have the application running on vanilla Kubernetes and want to migrate to
 ### Modified Files
 | File | Changes | Summary |
 |------|---------|---------|
-| daemonset-volume.yaml | ~15 lines | Added ServiceAccount, removed host restrictions, added capabilities |
+| statefulset-volume.yaml | ~15 lines | Added ServiceAccount, removed host restrictions, added capabilities |
 | deployment.yaml | ~20 lines | Added OpenShift labels and annotations |
 | README.md | ~50 lines | Updated commands from kubectl to oc, added Route instructions |
 | **Total** | **~85 lines** | **Modified for OpenShift compatibility** |
@@ -455,14 +455,14 @@ oc describe scc dump-volume-privileged
 oc get clusterrolebinding dump-volume-scc-binding -o yaml
 ```
 
-### Issue: DaemonSet Not Starting
-**Symptom:** DaemonSet pods in Pending or CrashLoopBackOff
+### Issue: StatefulSet Not Starting
+**Symptom:** StatefulSet pods in Pending or CrashLoopBackOff
 
 **Solution:**
 ```bash
 oc describe pod -n memory-leak-demo -l app=dump-volume-manager
 oc get events -n memory-leak-demo --sort-by='.lastTimestamp'
-oc logs -n memory-leak-demo daemonset/dump-volume-manager
+oc logs -n memory-leak-demo statefulset/dump-volume-manager
 ```
 
 ### Issue: Route Not Accessible
@@ -483,7 +483,7 @@ oc run curl-test --rm -i --tty --image=curlimages/curl -- \
 **Solution:**
 ```bash
 oc logs -n memory-leak-demo -l app=memory-leak-app -c wait-for-volume-manager
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- cat /host/mnt/dump/.ready
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- cat /host/mnt/dump/.ready
 ```
 
 ---

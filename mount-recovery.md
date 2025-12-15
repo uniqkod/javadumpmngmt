@@ -2,9 +2,9 @@
 
 ## Problem: Bind Mount Loss on Container Restart
 
-### What Happens When DaemonSet Restarts?
+### What Happens When StatefulSet Restarts?
 
-When the DaemonSet container stops or crashes:
+When the StatefulSet container stops or crashes:
 
 1. **Container dies** → Bind mount is removed from the host
 2. **Host path `/mnt/dump`** becomes an empty directory (or inaccessible)
@@ -25,7 +25,7 @@ Bind mounts are tied to the process that created them. When the container proces
 
 ### 1. Mount Existence Check on Startup
 
-The DaemonSet script now checks if a mount already exists:
+The StatefulSet script now checks if a mount already exists:
 
 ```bash
 if mountpoint -q /host/mnt/dump; then
@@ -128,7 +128,7 @@ livenessProbe:
 3. `/mnt/dump` becomes empty directory
 
 **Recovery:**
-1. DaemonSet restarts container (RestartPolicy: Always)
+1. StatefulSet restarts container (RestartPolicy: Always)
 2. Script detects no mount: `if ! mountpoint -q /host/mnt/dump`
 3. Creates fresh bind mount: `mount --bind /pv-storage /host/mnt/dump`
 4. Recreates `.ready` marker
@@ -139,10 +139,10 @@ livenessProbe:
 - Application init container waits for `.ready` file
 - No data loss (PVC data is preserved)
 
-### Scenario 2: OOM Kill of DaemonSet
+### Scenario 2: OOM Kill of StatefulSet
 
 **What happens:**
-1. DaemonSet pod is OOM killed
+1. StatefulSet pod is OOM killed
 2. Mount is lost immediately
 3. Application may be mid-write to heap dump
 
@@ -163,7 +163,7 @@ livenessProbe:
 3. Node comes back up
 
 **Recovery:**
-1. DaemonSet pod starts on node
+1. StatefulSet pod starts on node
 2. Creates fresh bind mount
 3. All data from PVC is accessible again
 
@@ -192,10 +192,10 @@ livenessProbe:
 
 ## Testing the Recovery
 
-### Test 1: Kill DaemonSet Container
+### Test 1: Kill StatefulSet Container
 
 ```bash
-# Find DaemonSet pod
+# Find StatefulSet pod
 POD=$(oc get pod -n memory-leak-demo -l app=dump-volume-manager -o jsonpath='{.items[0].metadata.name}')
 
 # Kill the container
@@ -223,7 +223,7 @@ mount | grep /mnt/dump
 # Unmount it
 umount /mnt/dump
 
-# Watch DaemonSet detect and remount
+# Watch StatefulSet detect and remount
 oc logs -n memory-leak-demo -l app=dump-volume-manager -f
 ```
 
@@ -232,17 +232,17 @@ oc logs -n memory-leak-demo -l app=dump-volume-manager -f
 - Automatic remount occurs
 - `.ready` file recreated
 
-### Test 3: Delete and Recreate DaemonSet
+### Test 3: Delete and Recreate StatefulSet
 
 ```bash
-# Delete DaemonSet
-oc delete daemonset -n memory-leak-demo dump-volume-manager
+# Delete StatefulSet
+oc delete statefulset -n memory-leak-demo dump-volume-manager
 
 # Application should show Init:0/1 (waiting)
 oc get pods -n memory-leak-demo -l app=memory-leak-app
 
-# Recreate DaemonSet
-oc apply -f daemonset-volume.yaml
+# Recreate StatefulSet
+oc apply -f statefulset-volume.yaml
 
 # Watch application init container complete
 oc logs -n memory-leak-demo -l app=memory-leak-app -c wait-for-volume-manager
@@ -250,7 +250,7 @@ oc logs -n memory-leak-demo -l app=memory-leak-app -c wait-for-volume-manager
 
 **Expected:**
 - Application waits in init
-- DaemonSet recreates mount
+- StatefulSet recreates mount
 - Init container detects `.ready` and completes
 - Application starts
 
@@ -258,11 +258,11 @@ oc logs -n memory-leak-demo -l app=memory-leak-app -c wait-for-volume-manager
 
 ## Best Practices
 
-### 1. Monitor DaemonSet Health
+### 1. Monitor StatefulSet Health
 
 ```bash
-# Check if all DaemonSet pods are ready
-oc get daemonset -n memory-leak-demo dump-volume-manager
+# Check if all StatefulSet pods are ready
+oc get statefulset -n memory-leak-demo dump-volume-manager
 
 # Should show: DESIRED = CURRENT = READY
 ```
@@ -270,20 +270,20 @@ oc get daemonset -n memory-leak-demo dump-volume-manager
 ### 2. Monitor Mount Status
 
 ```bash
-# Check mount from DaemonSet
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+# Check mount from StatefulSet
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   mountpoint -q /host/mnt/dump && echo "Mounted" || echo "NOT MOUNTED"
 
 # Check files are accessible
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   ls -lh /host/mnt/dump/
 ```
 
 ### 3. Set Up Alerts
 
 Create alerts for:
-- DaemonSet pod not ready
-- Frequent DaemonSet restarts (CrashLoopBackOff)
+- StatefulSet pod not ready
+- Frequent StatefulSet restarts (CrashLoopBackOff)
 - Mount failures in logs
 
 ### 4. Application Resilience
@@ -306,7 +306,7 @@ try {
 
 ### What This Solution CANNOT Fix
 
-1. **Simultaneous DaemonSet and Application Crash**
+1. **Simultaneous StatefulSet and Application Crash**
    - If node goes down, both lose state
    - Both restart and recover independently
    - Brief window where application may fail writes
@@ -314,7 +314,7 @@ try {
 2. **PVC Deletion**
    - If PVC is deleted, data is lost
    - Bind mount will fail (no source to bind)
-   - DaemonSet will crash and not recover
+   - StatefulSet will crash and not recover
 
 3. **Storage Backend Failure**
    - If underlying storage (NFS, Ceph, etc.) fails
@@ -335,20 +335,20 @@ try {
 ### Check Current Mount Status
 
 ```bash
-# Via DaemonSet
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+# Via StatefulSet
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   sh -c 'mountpoint /host/mnt/dump && echo OK || echo FAILED'
 
 # Check .ready marker
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   test -f /host/mnt/dump/.ready && echo "Ready" || echo "Not Ready"
 ```
 
 ### View Recent Mount Events
 
 ```bash
-# Check DaemonSet logs for mount activity
-oc logs -n memory-leak-demo daemonset/dump-volume-manager --tail=100 | \
+# Check StatefulSet logs for mount activity
+oc logs -n memory-leak-demo statefulset/dump-volume-manager --tail=100 | \
   grep -E "mount|bind|ready"
 ```
 
@@ -364,7 +364,7 @@ oc describe pod -n memory-leak-demo -l app=dump-volume-manager | \
 
 ## Summary
 
-The improved DaemonSet now handles bind mount persistence through:
+The improved StatefulSet now handles bind mount persistence through:
 
 1. ✅ **Startup mount verification** - Cleans up stale mounts
 2. ✅ **Post-mount validation** - Ensures mount succeeded
@@ -380,4 +380,4 @@ The improved DaemonSet now handles bind mount persistence through:
 **Created:** 2025-12-07T19:55:21.842Z  
 **Branch:** ocp  
 **Related Files:**
-- `daemonset-volume.yaml` - Enhanced with monitoring loop and probes
+- `statefulset-volume.yaml` - Enhanced with monitoring loop and probes

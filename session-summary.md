@@ -23,7 +23,7 @@ This session focused on adapting the memory leak demo application from vanilla K
 - **`OPENSHIFT.md`** - Complete OpenShift deployment guide
 
 #### Modified Files:
-- **`daemonset-volume.yaml`** - OpenShift security adaptations
+- **`statefulset-volume.yaml`** - OpenShift security adaptations
 - **`deployment.yaml`** - OpenShift labels and annotations
 - **`README.md`** - Updated for OpenShift CLI commands
 
@@ -41,7 +41,7 @@ allowedCapabilities:
   - SYS_ADMIN
 ```
 
-**Why:** OpenShift uses SCC instead of Pod Security Policies. DaemonSet needs privileged access for bind mounts.
+**Why:** OpenShift uses SCC instead of Pod Security Policies. StatefulSet needs privileged access for bind mounts.
 
 **ServiceAccount:**
 ```yaml
@@ -111,7 +111,7 @@ spec:
 ### 3. Bind Mount Recovery and Monitoring (Commit: 4e47520)
 
 #### Problem Identified:
-When DaemonSet container restarts/crashes:
+When StatefulSet container restarts/crashes:
 - Bind mount is removed from host
 - `/mnt/dump` becomes inaccessible
 - Application can't write heap dumps
@@ -190,10 +190,10 @@ livenessProbe:
 
 ---
 
-### 4. S3 Uploader DaemonSet (Commits: daeff9f, 557deb2)
+### 4. S3 Uploader StatefulSet (Commits: daeff9f, 557deb2)
 
 #### New Files Created:
-- **`s3-uploader-daemonset.yaml`** (317 lines)
+- **`s3-uploader-statefulset.yaml`** (317 lines)
 - **`s3-uploader.md`** (550 lines)
 
 #### Purpose:
@@ -233,7 +233,7 @@ data:
   S3_ENDPOINT_URL: ""            # For S3-compatible storage
 ```
 
-**DaemonSet Features:**
+**StatefulSet Features:**
 
 1. **Init Container - Wait for Volume Manager:**
 ```bash
@@ -342,15 +342,15 @@ Creates:
 - ClusterRole: `dump-volume-scc-user`
 - ClusterRoleBinding: `dump-volume-scc-binding`
 
-### 3. Deploy Volume Manager DaemonSet
+### 3. Deploy Volume Manager StatefulSet
 ```bash
-oc apply -f daemonset-volume.yaml
+oc apply -f statefulset-volume.yaml
 ```
 
 Creates:
 - PersistentVolumeClaim: `dump-storage-pvc` (10Gi)
 - PriorityClass: `dump-volume-critical` (priority: 1,000,000)
-- DaemonSet: `dump-volume-manager`
+- StatefulSet: `dump-volume-manager`
 
 Actions:
 - Mounts PVC to `/pv-storage`
@@ -359,18 +359,18 @@ Actions:
 - Monitors mount every 30 seconds
 - Auto-remounts if mount is lost
 
-### 4. Deploy S3 Uploader DaemonSet (Optional)
+### 4. Deploy S3 Uploader StatefulSet (Optional)
 ```bash
 # Update credentials in yaml or create secret separately
-vi s3-uploader-daemonset.yaml
+vi s3-uploader-statefulset.yaml
 
-oc apply -f s3-uploader-daemonset.yaml
+oc apply -f s3-uploader-statefulset.yaml
 ```
 
 Creates:
 - ConfigMap: `s3-uploader-config`
 - Secret: `s3-credentials`
-- DaemonSet: `heap-dump-s3-uploader`
+- StatefulSet: `heap-dump-s3-uploader`
 
 Actions:
 - Waits for volume manager `.ready` marker
@@ -417,7 +417,7 @@ curl -k https://$ROUTE_URL/health
 ### Priority and Dependencies:
 
 ```
-1. PriorityClass (1,000,000) → DaemonSets scheduled first
+1. PriorityClass (1,000,000) → StatefulSets scheduled first
 2. Volume Manager starts → Creates bind mount → Sets .ready
 3. S3 Uploader init → Waits for .ready → Main container starts
 4. Application init → Waits for .ready → Main container starts
@@ -448,14 +448,14 @@ curl -k https://$ROUTE_URL/health
 | OPENSHIFT.md | 343 | OpenShift deployment guide |
 | ocp-updates-summary.md | 543 | Complete changes summary |
 | mount-recovery.md | 384 | Bind mount recovery guide |
-| s3-uploader-daemonset.yaml | 317 | S3 uploader DaemonSet |
+| s3-uploader-statefulset.yaml | 317 | S3 uploader StatefulSet |
 | s3-uploader.md | 550 | S3 uploader documentation |
 | **Total** | **2,235** | **New content** |
 
 ### Modified Files
 | File | Changes | Summary |
 |------|---------|---------|
-| daemonset-volume.yaml | ~40 lines | Added ServiceAccount, monitoring loop, enhanced probes |
+| statefulset-volume.yaml | ~40 lines | Added ServiceAccount, monitoring loop, enhanced probes |
 | deployment.yaml | ~20 lines | Added OpenShift labels and annotations |
 | README.md | ~50 lines | Updated for OpenShift with oc commands |
 | **Total** | **~110 lines** | **Modified** |
@@ -472,7 +472,7 @@ curl -k https://$ROUTE_URL/health
 
 ### OpenShift Deployment
 - [ ] SCC created and bound to ServiceAccount
-- [ ] Volume Manager DaemonSet running on all nodes
+- [ ] Volume Manager StatefulSet running on all nodes
 - [ ] Volume Manager creates bind mount successfully
 - [ ] `.ready` marker file created
 - [ ] Application init container completes
@@ -504,15 +504,15 @@ curl -k https://$ROUTE_URL/health
 ### 1. Node-Specific Storage
 Heap dumps are stored on the node where the pod runs. If the pod moves to another node, previous dumps won't be accessible unless:
 - Manually copied
-- Uploaded to S3 (with S3 uploader DaemonSet)
+- Uploaded to S3 (with S3 uploader StatefulSet)
 
 ### 2. PVC Deletion
 If PVC is deleted:
 - All data is lost
 - Bind mount fails
-- DaemonSet crashes
+- StatefulSet crashes
 
-**Mitigation:** Regular S3 backups via uploader DaemonSet
+**Mitigation:** Regular S3 backups via uploader StatefulSet
 
 ### 3. Storage Backend Failure
 If underlying storage fails:
@@ -533,7 +533,7 @@ If S3 uploader pod restarts:
 ## Security Considerations
 
 ### OpenShift SCC
-- DaemonSet requires `dump-volume-privileged` SCC
+- StatefulSet requires `dump-volume-privileged` SCC
 - Grants `SYS_ADMIN` capability for bind mounts
 - Restricted to specific ServiceAccount
 - Auditable via RBAC
@@ -584,25 +584,25 @@ If S3 uploader pod restarts:
 
 ### Volume Manager
 ```bash
-# Check DaemonSet status
-oc get daemonset -n memory-leak-demo dump-volume-manager
+# Check StatefulSet status
+oc get statefulset -n memory-leak-demo dump-volume-manager
 
 # View logs
-oc logs -n memory-leak-demo daemonset/dump-volume-manager -f
+oc logs -n memory-leak-demo statefulset/dump-volume-manager -f
 
 # Check mount status
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   mountpoint -q /host/mnt/dump && echo "Mounted" || echo "NOT MOUNTED"
 
 # Verify .ready file
-oc exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   cat /host/mnt/dump/.ready
 ```
 
 ### S3 Uploader
 ```bash
-# Check DaemonSet status
-oc get daemonset -n memory-leak-demo heap-dump-s3-uploader
+# Check StatefulSet status
+oc get statefulset -n memory-leak-demo heap-dump-s3-uploader
 
 # View logs
 oc logs -n memory-leak-demo -l app=s3-uploader -f
@@ -676,7 +676,7 @@ The application now provides enterprise-grade heap dump management with automati
 
 ```
 557deb2 (HEAD -> ocp) Add comprehensive S3 uploader documentation
-daeff9f              Add S3 uploader DaemonSet for automatic heap dump backup
+daeff9f              Add S3 uploader StatefulSet for automatic heap dump backup
 4e47520              Add bind mount recovery and monitoring
 115c3fa              Add comprehensive OpenShift updates summary
 ae0ec15              Add OpenShift support with SCC, RBAC, and Route
@@ -698,8 +698,8 @@ bb78052 (master)     vanila ready
 - ocp-updates-summary.md
 
 ### Kubernetes Manifests (5 files)
-- daemonset-volume.yaml
-- s3-uploader-daemonset.yaml
+- statefulset-volume.yaml
+- s3-uploader-statefulset.yaml
 - deployment.yaml
 - openshift-rbac.yaml
 - openshift-route.yaml

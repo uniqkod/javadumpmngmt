@@ -2,13 +2,13 @@
 
 ## Overview
 
-This document explains how we ensure the DaemonSet runs before application pods using Kubernetes priority classes and init containers.
+This document explains how we ensure the StatefulSet runs before application pods using Kubernetes priority classes and init containers.
 
 ## Implementation
 
-### 1. PriorityClass for DaemonSet
+### 1. PriorityClass for StatefulSet
 
-**File:** `daemonset-volume.yaml`
+**File:** `statefulset-volume.yaml`
 
 ```yaml
 apiVersion: scheduling.k8s.io/v1
@@ -17,24 +17,24 @@ metadata:
   name: dump-volume-critical
 value: 1000000
 globalDefault: false
-description: "High priority for dump volume manager DaemonSet"
+description: "High priority for dump volume manager StatefulSet"
 ```
 
 **How it works:**
 - Priority value of 1,000,000 (very high)
 - Kubernetes scheduler prioritizes pods with higher priority values
-- DaemonSet pods will be scheduled before lower-priority pods
+- StatefulSet pods will be scheduled before lower-priority pods
 - Not set as global default (only applies when explicitly set)
 
 **Priority Levels:**
 - **System Critical**: 2,000,000,000+ (reserved for system components)
-- **High Priority**: 1,000,000 (our DaemonSet)
+- **High Priority**: 1,000,000 (our StatefulSet)
 - **Default**: 0 (most application pods)
 - **Low Priority**: negative values (can be preempted)
 
-### 2. DaemonSet with Priority
+### 2. StatefulSet with Priority
 
-**Applied to DaemonSet:**
+**Applied to StatefulSet:**
 ```yaml
 spec:
   template:
@@ -43,13 +43,13 @@ spec:
 ```
 
 **Benefits:**
-- Scheduler gives preference to DaemonSet pods
-- DaemonSet pods are scheduled first on new nodes
-- DaemonSet pods are less likely to be evicted during resource pressure
+- Scheduler gives preference to StatefulSet pods
+- StatefulSet pods are scheduled first on new nodes
+- StatefulSet pods are less likely to be evicted during resource pressure
 
 ### 3. Readiness Probe
 
-**DaemonSet signals readiness:**
+**StatefulSet signals readiness:**
 ```yaml
 readinessProbe:
   exec:
@@ -61,7 +61,7 @@ readinessProbe:
   periodSeconds: 5
 ```
 
-**In the DaemonSet script:**
+**In the StatefulSet script:**
 ```bash
 # Create readiness marker file
 echo "ready" > /host/mnt/dump/.ready
@@ -116,7 +116,7 @@ initContainers:
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  Step 1: DaemonSet Pod (Priority: 1,000,000)                    │
+│  Step 1: StatefulSet Pod (Priority: 1,000,000)                    │
 │                                                                   │
 │  1. PVC binds to PV                                              │
 │  2. Pod scheduled on node                                        │
@@ -128,12 +128,12 @@ initContainers:
 │  8. Pod marked as READY                                          │
 └──────────────────────────────────────────────────────────────────┘
                               │
-                              │ DaemonSet is READY
+                              │ StatefulSet is READY
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  Step 2: Application Pod (Priority: 0 - default)                │
 │                                                                   │
-│  1. Pod scheduled (after DaemonSet due to priority)             │
+│  1. Pod scheduled (after StatefulSet due to priority)             │
 │  2. Init container starts                                        │
 │  3. Checks for /mnt/dump/.ready file                            │
 │  4. Waits in loop if not found                                  │
@@ -148,13 +148,13 @@ initContainers:
 
 ### What is Guaranteed:
 
-✅ **DaemonSet scheduling priority**: DaemonSet pods are scheduled before application pods due to higher priority
+✅ **StatefulSet scheduling priority**: StatefulSet pods are scheduled before application pods due to higher priority
 
-✅ **DaemonSet readiness**: Init container ensures volume manager is ready before app starts
+✅ **StatefulSet readiness**: Init container ensures volume manager is ready before app starts
 
 ✅ **Storage availability**: Application never starts until `/mnt/dump` is mounted and ready
 
-✅ **Node-level guarantee**: Each node runs DaemonSet before scheduling lower-priority pods
+✅ **Node-level guarantee**: Each node runs StatefulSet before scheduling lower-priority pods
 
 ### What is NOT Guaranteed:
 
@@ -162,7 +162,7 @@ initContainers:
 
 ❌ **Zero waiting time**: Application pods may wait briefly in init container
 
-❌ **Cross-node dependency**: Application on Node A doesn't wait for DaemonSet on Node B
+❌ **Cross-node dependency**: Application on Node A doesn't wait for StatefulSet on Node B
 
 ## Verification
 
@@ -177,7 +177,7 @@ NAME                    VALUE      GLOBAL-DEFAULT   AGE
 dump-volume-critical    1000000    false            5m
 ```
 
-### Check DaemonSet Pod Priority
+### Check StatefulSet Pod Priority
 ```bash
 kubectl get pod -n memory-leak-demo -l app=dump-volume-manager -o jsonpath='{.items[0].spec.priorityClassName}'
 ```
@@ -189,7 +189,7 @@ dump-volume-critical
 
 ### Watch Startup Order
 ```bash
-# Terminal 1: Watch DaemonSet
+# Terminal 1: Watch StatefulSet
 kubectl get pods -n memory-leak-demo -l app=dump-volume-manager -w
 
 # Terminal 2: Watch Application
@@ -221,16 +221,16 @@ Init Containers:
 kubectl logs -n memory-leak-demo <pod-name> -c wait-for-volume-manager
 
 # Check if .ready file exists on host
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   ls -la /host/mnt/dump/.ready
 ```
 
 **Common causes:**
-- DaemonSet not running or not ready
-- DaemonSet failed to create bind mount
+- StatefulSet not running or not ready
+- StatefulSet failed to create bind mount
 - Permissions issue on /mnt/dump
 
-### DaemonSet Not Scheduling First
+### StatefulSet Not Scheduling First
 ```bash
 # Check priority class
 kubectl get priorityclass
@@ -239,16 +239,16 @@ kubectl get priorityclass
 kubectl get pod -n memory-leak-demo -o custom-columns=NAME:.metadata.name,PRIORITY:.spec.priority
 ```
 
-### Node Has No DaemonSet Pod
+### Node Has No StatefulSet Pod
 ```bash
-# Check DaemonSet status
-kubectl get daemonset -n memory-leak-demo
+# Check StatefulSet status
+kubectl get statefulset -n memory-leak-demo
 
 # Check node taints
 kubectl describe node <node-name> | grep Taints
 ```
 
-Ensure DaemonSet tolerations match node taints.
+Ensure StatefulSet tolerations match node taints.
 
 ## Alternative: System Critical Priority
 
@@ -264,7 +264,7 @@ globalDefault: false
 description: "System-level priority for dump volume manager"
 ```
 
-**Warning:** Very high priority values (2 billion+) are typically reserved for critical system components. Use only if DaemonSet is truly critical for cluster operation.
+**Warning:** Very high priority values (2 billion+) are typically reserved for critical system components. Use only if StatefulSet is truly critical for cluster operation.
 
 ## Best Practices
 
@@ -274,7 +274,7 @@ description: "System-level priority for dump volume manager"
    - Keep application pods at default (0)
 
 2. **Add readiness probes**
-   - Always signal when DaemonSet is ready
+   - Always signal when StatefulSet is ready
    - Use marker files or health endpoints
 
 3. **Use init containers**
@@ -282,7 +282,7 @@ description: "System-level priority for dump volume manager"
    - Better error messages than implicit ordering
 
 4. **Test the order**
-   - Deploy DaemonSet and application together
+   - Deploy StatefulSet and application together
    - Verify init container waits correctly
    - Check logs for proper sequencing
 
@@ -294,9 +294,9 @@ description: "System-level priority for dump volume manager"
 ## Summary
 
 The implementation provides strong guarantees:
-- **PriorityClass**: Ensures DaemonSet is scheduled first
-- **Readiness Probe**: Signals when DaemonSet is ready
-- **Init Container**: Application explicitly waits for DaemonSet
+- **PriorityClass**: Ensures StatefulSet is scheduled first
+- **Readiness Probe**: Signals when StatefulSet is ready
+- **Init Container**: Application explicitly waits for StatefulSet
 - **Marker File**: Simple, reliable readiness signal
 
 This combination ensures the storage infrastructure is ready before any application attempts to write heap dumps.
@@ -304,5 +304,5 @@ This combination ensures the storage infrastructure is ready before any applicat
 ---
 
 **Related Files:**
-- `daemonset-volume.yaml` - PriorityClass and DaemonSet with readiness
+- `statefulset-volume.yaml` - PriorityClass and StatefulSet with readiness
 - `deployment.yaml` - Application with init container

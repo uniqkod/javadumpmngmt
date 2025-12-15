@@ -149,6 +149,11 @@ spec:
         hostPath:
           path: /mnt
           type: DirectoryOrCreate
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists
+      - effect: NoExecute
+        operator: Exists
   volumeClaimTemplates:
   - metadata:
       name: pv-storage

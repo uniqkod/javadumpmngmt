@@ -123,8 +123,8 @@ Excludes from Docker build:
 
 ## Step 6: Create Kubernetes Configuration
 
-### 6.1 Create `daemonset-volume.yaml`
-**File:** `daemonset-volume.yaml`
+### 6.1 Create `statefulset-volume.yaml`
+**File:** `statefulset-volume.yaml`
 
 Contains 3 Kubernetes resources:
 
@@ -140,9 +140,9 @@ Contains 3 Kubernetes resources:
 - Name: dump-volume-critical
 - Value: 1000000 (high priority)
 - GlobalDefault: false
-- Purpose: Ensure DaemonSet is scheduled before application pods
+- Purpose: Ensure StatefulSet is scheduled before application pods
 
-#### Resource 3: DaemonSet
+#### Resource 3: StatefulSet
 - Name: dump-volume-manager
 - Namespace: memory-leak-demo
 - PriorityClass: dump-volume-critical (priority: 1,000,000)
@@ -177,7 +177,7 @@ Contains 3 Kubernetes resources:
 - Init container:
   - Name: wait-for-volume-manager
   - Image: busybox
-  - Purpose: Wait for DaemonSet to be ready
+  - Purpose: Wait for StatefulSet to be ready
   - Checks for `/mnt/dump/.ready` marker file
   - Loops every 2 seconds until ready
   - Only after init completes, main container starts
@@ -318,19 +318,19 @@ curl http://localhost:8080/health
 kubectl cluster-info
 ```
 
-### 10.2 Apply DaemonSet First (Creates PVC and Volume Manager)
+### 10.2 Apply StatefulSet First (Creates PVC and Volume Manager)
 ```bash
-kubectl apply -f daemonset-volume.yaml
+kubectl apply -f statefulset-volume.yaml
 ```
 
 Expected output:
 ```
 persistentvolumeclaim/dump-storage-pvc created
 priorityclass.scheduling.k8s.io/dump-volume-critical created
-daemonset.apps/dump-volume-manager created
+statefulset.apps/dump-volume-manager created
 ```
 
-### 10.3 Verify DaemonSet Deployment
+### 10.3 Verify StatefulSet Deployment
 ```bash
 # Check PriorityClass
 kubectl get priorityclass dump-volume-critical
@@ -338,25 +338,25 @@ kubectl get priorityclass dump-volume-critical
 # Check PVC status (should be Bound)
 kubectl get pvc -n memory-leak-demo
 
-# Check DaemonSet
-kubectl get daemonset -n memory-leak-demo
+# Check StatefulSet
+kubectl get statefulset -n memory-leak-demo
 
-# Check DaemonSet pods (one per node, should be READY 1/1)
+# Check StatefulSet pods (one per node, should be READY 1/1)
 kubectl get pods -n memory-leak-demo -l app=dump-volume-manager
 
 # Verify pod priority
 kubectl get pod -n memory-leak-demo -l app=dump-volume-manager \
   -o jsonpath='{.items[0].spec.priorityClassName}'
 
-# View DaemonSet logs
-kubectl logs -n memory-leak-demo daemonset/dump-volume-manager
+# View StatefulSet logs
+kubectl logs -n memory-leak-demo statefulset/dump-volume-manager
 
 # Verify .ready marker file
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   cat /host/mnt/dump/.ready
 ```
 
-Expected DaemonSet log output:
+Expected StatefulSet log output:
 ```
 Starting dump volume manager...
 Mounting PV to host /mnt/dump...
@@ -508,8 +508,8 @@ total 250M
 
 ### 12.3b Verify Files on Host (Alternative)
 ```bash
-# Check via DaemonSet
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+# Check via StatefulSet
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   ls -lh /host/mnt/dump/memory-leak-demo/
 
 # If you have SSH access to the node
@@ -576,11 +576,11 @@ Open browser: http://localhost:7000
 # Check init container logs
 kubectl logs -n memory-leak-demo -l app=memory-leak-app -c wait-for-volume-manager
 
-# Check if DaemonSet is ready
+# Check if StatefulSet is ready
 kubectl get pods -n memory-leak-demo -l app=dump-volume-manager
 
 # Check if .ready file exists
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   ls -la /host/mnt/dump/.ready
 
 # Describe pod for events
@@ -588,9 +588,9 @@ kubectl describe pod -n memory-leak-demo -l app=memory-leak-app
 ```
 
 Common issues:
-- Init container waiting: DaemonSet not ready yet (check DaemonSet logs)
-- DaemonSet failed: Check bind mount creation (privileged mode required)
-- .ready file missing: DaemonSet script didn't complete
+- Init container waiting: StatefulSet not ready yet (check StatefulSet logs)
+- StatefulSet failed: Check bind mount creation (privileged mode required)
+- .ready file missing: StatefulSet script didn't complete
 - Image not found: Build and tag image correctly
 - ImagePullBackOff: Check imagePullPolicy
 - PVC pending: Check storage class availability
@@ -600,7 +600,7 @@ Check:
 1. JAVA_OPTS configured correctly
 2. /dumps directory is writable
 3. HostPath is mounted correctly
-4. DaemonSet is running and bind mount is successful
+4. StatefulSet is running and bind mount is successful
 5. Sufficient disk space on PV
 
 Verify:
@@ -609,14 +609,14 @@ Verify:
 kubectl exec -n memory-leak-demo $POD_NAME -- ls -la /dumps/
 kubectl exec -n memory-leak-demo $POD_NAME -- df -h /dumps/
 
-# Check DaemonSet
-kubectl logs -n memory-leak-demo daemonset/dump-volume-manager
+# Check StatefulSet
+kubectl logs -n memory-leak-demo statefulset/dump-volume-manager
 
 # Check PVC status
 kubectl get pvc -n memory-leak-demo dump-storage-pvc
 
 # Check available space on PV
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   df -h /host/mnt/dump
 ```
 
@@ -628,11 +628,11 @@ kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
 ### 14.4 Cannot Access Pod After Crash
 If pod restarts before you can copy heap dump:
 ```bash
-# Method 1: Access via DaemonSet (always running)
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+# Method 1: Access via StatefulSet (always running)
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   ls -lh /host/mnt/dump/memory-leak-demo/
 
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   cat /host/mnt/dump/memory-leak-demo/heap_dump.hprof > heap_dump.hprof
 
 # Method 2: Copy from PV via new debug pod
@@ -658,8 +658,8 @@ cp /mnt/dump/memory-leak-demo/heap_dump.hprof /tmp/
 # Delete application deployment first
 kubectl delete -f deployment.yaml
 
-# Delete DaemonSet and PVC
-kubectl delete -f daemonset-volume.yaml
+# Delete StatefulSet and PVC
+kubectl delete -f statefulset-volume.yaml
 
 # Or delete entire namespace (deletes everything)
 kubectl delete namespace memory-leak-demo
@@ -668,7 +668,7 @@ kubectl delete namespace memory-leak-demo
 This deletes:
 - Namespace
 - Deployment
-- DaemonSet
+- StatefulSet
 - Service
 - Pods
 - PVC (PersistentVolumeClaim)
@@ -781,8 +781,8 @@ management.metrics.export.prometheus.enabled=true
 | application.properties | Spring Boot configuration | 7 |
 | Dockerfile | Container image definition | 22 |
 | openshift-rbac.yaml | SCC, ServiceAccount, RBAC | 76 |
-| daemonset-volume.yaml | PriorityClass, PVC, Volume Manager DaemonSet | 140 |
-| s3-uploader-daemonset.yaml | ConfigMap, Secret, S3 Uploader DaemonSet | 317 |
+| statefulset-volume.yaml | PriorityClass, PVC, Volume Manager StatefulSet | 140 |
+| s3-uploader-statefulset.yaml | ConfigMap, Secret, S3 Uploader StatefulSet | 317 |
 | deployment.yaml | Kubernetes deployment with init container | 107 |
 | openshift-route.yaml | OpenShift Route with TLS | 22 |
 | README.md | Quick start documentation | 150+ |
@@ -809,7 +809,7 @@ This completes all steps from project creation through deployment, monitoring, h
 - OutOfMemoryError handling
 - Heap dump generation
 - OpenShift deployment with SCC and RBAC
-- DaemonSet with privileged operations
+- StatefulSet with privileged operations
 - PersistentVolume (10Gi) with default StorageClass
 - Bidirectional mount propagation for host path access
 - Pod priority classes (1,000,000) for scheduling control
@@ -823,16 +823,16 @@ This completes all steps from project creation through deployment, monitoring, h
 
 **Storage Architecture:**
 - PersistentVolumeClaim: 10Gi using default storage class
-- Volume Manager DaemonSet: Mounts PVC and binds to host `/mnt/dump`
+- Volume Manager StatefulSet: Mounts PVC and binds to host `/mnt/dump`
 - Application: Writes to `/dumps` → backed by PV via host path
-- S3 Uploader DaemonSet: Monitors `/mnt/dump` and uploads to S3
-- Access: Via kubectl/oc, host SSH, DaemonSet, or S3
+- S3 Uploader StatefulSet: Monitors `/mnt/dump` and uploads to S3
+- Access: Via kubectl/oc, host SSH, StatefulSet, or S3
 
 **Startup Order Guarantee:**
-- PriorityClass: 1,000,000 for DaemonSets (vs default 0 for app)
+- PriorityClass: 1,000,000 for StatefulSets (vs default 0 for app)
 - Readiness marker: Volume manager creates `.ready` file
 - Init containers: Application and S3 uploader wait for `.ready` file
-- Result: DaemonSets always ready before application starts
+- Result: StatefulSets always ready before application starts
 
 **Automatic Features:**
 - Mount recovery: Remounts within 30 seconds if lost
