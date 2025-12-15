@@ -12,7 +12,7 @@ RUN mvn clean package -DskipTests
 FROM registry.access.redhat.com/ubi8/openjdk-17-runtime:1.23-3.1764066412
   
 # Create directory for heap dumps
-RUN mkdir -p /dumps && chmod 777 /dumps
+#RUN mkdir -p /dumps && chmod 777 /dumps
 
 # Copy the jar file
 COPY --from=builder /home/jboss/project/target/memory-leak-demo-1.0.0.jar app.jar
