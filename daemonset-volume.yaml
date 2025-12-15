@@ -2,7 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: dump-storage-pvc
-  namespace: memory-leak-demo
+  #namespace: memory-leak-demo
   labels:
     app: dump-volume-manager
 spec:
@@ -27,7 +27,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: dump-volume-manager
-  namespace: memory-leak-demo
+  #namespace: memory-leak-demo
   labels:
     app: dump-volume-manager
   annotations:
