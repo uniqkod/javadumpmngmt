@@ -6,22 +6,7 @@ metadata:
   name: dump-volume-critical
 value: 1000000
 globalDefault: false
-description: "High priority for dump volume manager StatefulSet"
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: dump-volume-manager
-  labels:
-    app: dump-volume-manager
-spec:
-  clusterIP: None
-  selector:
-    app: dump-volume-manager
-  ports:
-  - port: 80
-    name: placeholder
+description: "High priority for dump volume manager DaemonSet"
 
 ---
 apiVersion: apps/v1
