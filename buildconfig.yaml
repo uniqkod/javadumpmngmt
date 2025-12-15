@@ -10,8 +10,8 @@ spec:
   source:
     type: Git
     git:
-      uri: https://github.com/your-org/javadumpmngmt.git
-      ref: main
+      uri: https://github.com/uniqkod/javadumpmngmt.git
+      ref: ocp
     contextDir: .
   strategy:
     type: Docker
@@ -23,15 +23,15 @@ spec:
     to:
       kind: ImageStreamTag
       name: memory-leak-demo:latest
-  triggers:
-  - type: ConfigChange
-  - type: ImageChange
-  - type: GitHub
-    github:
-      secret: github-webhook-secret
-  - type: Generic
-    generic:
-      secret: generic-webhook-secret
+  # triggers:
+  # - type: ConfigChange
+  # - type: ImageChange
+  # - type: GitHub
+  #   github:
+  #     secret: github-webhook-secret
+  # - type: Generic
+  #   generic:
+  #     secret: generic-webhook-secret
   runPolicy: Serial
   successfulBuildsHistoryLimit: 3
   failedBuildsHistoryLimit: 3
