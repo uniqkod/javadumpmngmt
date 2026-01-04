@@ -2,7 +2,7 @@
 
 A Spring Boot application that deliberately causes memory leaks to demonstrate OutOfMemoryError handling and heap dump generation in **OpenShift Container Platform**.
 
-> **Note:** This is the OpenShift-specific branch. For vanilla Kubernetes, see the `master` branch.
+> **Note:** This is the OpenShift-specific final release canditade branch. For the first vanilla Kubernetes draft version see the `draft' tag
 
 ## Features
 
