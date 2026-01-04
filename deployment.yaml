@@ -2,15 +2,26 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: memory-leak-demo
+  labels:
+    app: memory-leak-demo
+    openshift.io/cluster-monitoring: "true"
+  annotations:
+    openshift.io/description: "Memory leak demo application for heap dump testing"
+    openshift.io/display-name: "Memory Leak Demo"
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: memory-leak-app
-  namespace: memory-leak-demo
   labels:
     app: memory-leak-app
+    app.kubernetes.io/name: memory-leak-app
+    app.kubernetes.io/component: application
+    app.openshift.io/runtime: java
+  annotations:
+    app.openshift.io/vcs-uri: "https://github.com/example/memory-leak-demo"
+    app.openshift.io/vcs-ref: "ocp"
 spec:
   replicas: 1
   selector:
@@ -20,10 +31,13 @@ spec:
     metadata:
       labels:
         app: memory-leak-app
+        deployment: memory-leak-app
+      annotations:
+        openshift.io/scc: restricted
     spec:
       initContainers:
       - name: wait-for-volume-manager
-        image: busybox:latest
+        image: busybox:1.36.1
         command:
         - sh
         - -c
@@ -93,7 +107,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: memory-leak-service
-  namespace: memory-leak-demo
   labels:
     app: memory-leak-app
 spec:

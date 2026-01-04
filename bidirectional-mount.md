@@ -16,7 +16,7 @@ Bidirectional mount propagation is a Kubernetes volume mount feature that allows
 In our memory leak demo application, we use bidirectional mount propagation for the following reasons:
 
 ### 1. **Dynamic Volume Management**
-The DaemonSet can dynamically manage storage on each Kubernetes node without requiring pre-configured volumes or storage classes.
+The StatefulSet can dynamically manage storage on each Kubernetes node without requiring pre-configured volumes or storage classes.
 
 ### 2. **Cross-Pod Visibility**
 Multiple pods across different nodes can share and access heap dumps through a consistent host path (`/mnt/dump`).
@@ -46,7 +46,7 @@ ls -lh /mnt/dump/memory-leak-demo/
 │                              │ Mounted to                        │
 │                              ▼                                    │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │              DaemonSet: dump-volume-manager                 │ │
+│  │              StatefulSet: dump-volume-manager                 │ │
 │  │                                                              │ │
 │  │  Container: volume-manager                                  │ │
 │  │  ┌────────────────────────────────────────────────────────┐ │ │
@@ -92,7 +92,7 @@ ls -lh /mnt/dump/memory-leak-demo/
 
 ## Implementation Details
 
-### DaemonSet Configuration
+### StatefulSet Configuration
 
 ```yaml
 # PersistentVolumeClaim for 10Gi storage
@@ -109,7 +109,7 @@ spec:
   storageClassName: ""  # Uses default storage class
 
 ---
-# DaemonSet configuration
+# StatefulSet configuration
 volumeMounts:
 - name: host-mnt
   mountPath: /host/mnt
@@ -152,7 +152,7 @@ Bidirectional mount propagation requires:
    - `hostPID: true` - Access to host process namespace
 
 3. **Tolerations**
-   - Allows DaemonSet to run on all nodes including control plane
+   - Allows StatefulSet to run on all nodes including control plane
 
 ## Benefits in Our Use Case
 
@@ -163,10 +163,10 @@ Uses default storage class - works on any Kubernetes cluster without custom stor
 10Gi PersistentVolume ensures heap dumps survive pod restarts and have dedicated storage space.
 
 ### 3. **Guaranteed Startup Order**
-PriorityClass ensures DaemonSet runs first, and init containers ensure application waits for storage readiness. See [pod-priority.md](pod-priority.md) for details.
+PriorityClass ensures StatefulSet runs first, and init containers ensure application waits for storage readiness. See [pod-priority.md](pod-priority.md) for details.
 
 ### 4. **Automatic Cleanup**
-DaemonSet ensures `/mnt/dump` exists and has correct permissions on every node.
+StatefulSet ensures `/mnt/dump` exists and has correct permissions on every node.
 
 ### 5. **Debugging Efficiency**
 Multiple access methods:
@@ -188,23 +188,23 @@ Other applications can use subdirectories under `/mnt/dump/`:
 
 ## Usage Instructions
 
-### Deploy the DaemonSet
+### Deploy the StatefulSet
 ```bash
-# Deploy DaemonSet first to prepare the host directories
-kubectl apply -f daemonset-volume.yaml
+# Deploy StatefulSet first to prepare the host directories
+kubectl apply -f statefulset-volume.yaml
 
 # This creates:
 # - PriorityClass: dump-volume-critical (priority: 1,000,000)
 # - PersistentVolumeClaim: dump-storage-pvc (10Gi)
-# - DaemonSet: dump-volume-manager
+# - StatefulSet: dump-volume-manager
 
-# Verify DaemonSet is running on all nodes
+# Verify StatefulSet is running on all nodes
 kubectl get priorityclass dump-volume-critical
 kubectl get pvc -n memory-leak-demo
-kubectl get daemonset -n memory-leak-demo
+kubectl get statefulset -n memory-leak-demo
 kubectl get pods -n memory-leak-demo -l app=dump-volume-manager
 
-# Check DaemonSet is ready (should show READY 1/1)
+# Check StatefulSet is ready (should show READY 1/1)
 kubectl get pods -n memory-leak-demo -l app=dump-volume-manager -o wide
 ```
 
@@ -215,11 +215,11 @@ kubectl apply -f deployment.yaml
 
 # The app will:
 # 1. Start with init container
-# 2. Wait for /mnt/dump/.ready file (created by DaemonSet)
+# 2. Wait for /mnt/dump/.ready file (created by StatefulSet)
 # 3. Once ready, start main container
 # 4. Write heap dumps to /mnt/dump/memory-leak-demo/
 
-# Watch init container wait for DaemonSet
+# Watch init container wait for StatefulSet
 kubectl logs -n memory-leak-demo -l app=memory-leak-app -c wait-for-volume-manager -f
 
 # Once init completes, watch application
@@ -278,26 +278,26 @@ kubectl run -it --rm debug \
 
 ### Check Mount Propagation
 ```bash
-# Inside the DaemonSet pod
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+# Inside the StatefulSet pod
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   cat /proc/self/mountinfo | grep /host/mnt
 ```
 
 ### Verify Directory Permissions
 ```bash
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   ls -la /host/mnt/dump
 ```
 
 ### Check Available Space
 ```bash
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   df -h /host/mnt/dump
 ```
 
-### View DaemonSet Logs
+### View StatefulSet Logs
 ```bash
-kubectl logs -n memory-leak-demo daemonset/dump-volume-manager
+kubectl logs -n memory-leak-demo statefulset/dump-volume-manager
 ```
 
 Expected output:
@@ -322,7 +322,7 @@ Volume manager running. Keeping pod alive...
 kubectl get pod -n memory-leak-demo -o custom-columns=NAME:.metadata.name,PRIORITY:.spec.priority,READY:.status.conditions[?\(@.type==\"Ready\"\)].status
 
 # Verify .ready marker file exists
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   cat /host/mnt/dump/.ready
 ```
 
@@ -334,7 +334,7 @@ Heap dumps are stored on the node where the pod runs. If the pod moves to anothe
 ### 2. **Disk Space Management**
 The PersistentVolume provides 10Gi of dedicated storage. Monitor disk usage:
 ```bash
-kubectl exec -n memory-leak-demo daemonset/dump-volume-manager -- \
+kubectl exec -n memory-leak-demo statefulset/dump-volume-manager -- \
   df -h /host/mnt/dump
 ```
 
@@ -356,7 +356,7 @@ Some Kubernetes clusters (GKE Autopilot, managed services) may restrict:
 ### 5. **Cleanup Required**
 Heap dumps persist on the host after pod deletion. Manual cleanup may be needed:
 ```bash
-# On the host or via DaemonSet
+# On the host or via StatefulSet
 rm -rf /mnt/dump/memory-leak-demo/*
 ```
 
@@ -369,7 +369,7 @@ rm -rf /mnt/dump/memory-leak-demo/*
 - Works with default storage class
 - Accessible via host path for easy debugging
 **Cons**: 
-- Requires privileged DaemonSet for bind mount
+- Requires privileged StatefulSet for bind mount
 - Slightly more complex setup
 
 ### emptyDir
@@ -406,8 +406,8 @@ For production environments, consider additional features like:
 **Last Updated**: 2025-12-07T19:33:36.130Z  
 **Author**: Generated for memory-leak-demo project  
 **Storage**: 10Gi PersistentVolume using default StorageClass  
-**Priority**: DaemonSet priority 1,000,000 with init container dependency  
+**Priority**: StatefulSet priority 1,000,000 with init container dependency  
 **Related Files**: 
-- `daemonset-volume.yaml` - PriorityClass, PVC, and DaemonSet configuration
+- `statefulset-volume.yaml` - PriorityClass, PVC, and StatefulSet configuration
 - `deployment.yaml` - Application deployment with init container and hostPath mount
 - `pod-priority.md` - Detailed explanation of priority and startup ordering
