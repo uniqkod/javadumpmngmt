@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3-uploader-config
+  namespace: heapdump  
+  labels:
+    app: s3-uploader
+data:
+  S3_BUCKET: "heap-dumps"
+  S3_PREFIX: "memory-leak-demo/"
+  WATCH_INTERVAL: "60"
+  FILE_STABLE_TIME: "120"  # Wait 2 minutes after file stops growing
