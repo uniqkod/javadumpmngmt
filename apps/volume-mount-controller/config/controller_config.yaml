@@ -1,0 +1,68 @@
+"""
+Configuration template for Volume Mount Controller.
+
+Copy to config/controller_config.yaml and customize as needed.
+"""
+
+# Monitoring configuration
+monitoring:
+  # Interval between mount checks (seconds)
+  check_interval: 30
+  
+  # Paths to monitor
+  mount_paths:
+    - /mnt/dump
+    - /mnt/data
+  
+  # Health check parameters
+  health_checks:
+    # Check if mount point exists
+    check_exists: true
+    
+    # Check read/write permissions
+    check_permissions: true
+    
+    # Check filesystem space
+    check_filesystem: true
+    
+    # Check mount propagation
+    check_propagation: false
+
+# Recovery configuration
+recovery:
+  # Recovery timeout (seconds)
+  timeout: 60
+  
+  # Maximum recovery attempts
+  max_attempts: 3
+  
+  # Delay between recovery attempts (seconds)
+  retry_delay: 5
+  
+  # Create test files for validation
+  validate_with_test_file: true
+
+# Kubernetes configuration
+kubernetes:
+  # Namespace for the controller
+  namespace: default
+  
+  # Update node status on each check
+  update_node_status: true
+  
+  # Create events for failures
+  create_events: true
+  
+  # Event severity for failures
+  event_type: Warning
+
+# Logging configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: INFO
+  
+  # Log format: json or text
+  format: json
+  
+  # Log file path (optional)
+  file: null
