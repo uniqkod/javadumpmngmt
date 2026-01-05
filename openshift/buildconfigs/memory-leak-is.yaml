@@ -1,0 +1,9 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: memory-leak-demo
+  labels:
+    app: memory-leak-demo
+spec:
+  lookupPolicy:
+    local: false

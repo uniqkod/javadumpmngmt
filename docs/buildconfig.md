@@ -31,14 +31,14 @@ source:
   git:
     uri: https://github.com/your-org/javadumpmngmt.git
     ref: main
-  contextDir: .
+  contextDir: apps/memoryleak
 ```
 
 **Configuration Details:**
 - **Type**: Git repository
 - **URI**: Repository URL (must be updated with your actual repository)
 - **Ref**: Branch name (default: `main`)
-- **Context Directory**: Root directory (`.`) - where the Dockerfile is located
+- **Context Directory**: `apps/memoryleak` - where the Dockerfile is located
 
 ### Build Strategy
 
@@ -55,7 +55,7 @@ strategy:
 
 **Strategy Details:**
 - **Type**: Docker - uses the Dockerfile to build the image
-- **Dockerfile Path**: `Dockerfile` in the repository root
+- **Dockerfile Path**: `Dockerfile` in the `apps/memoryleak` directory
 - **No Cache**: `false` - enables layer caching for faster builds
 - **Force Pull**: `false` - reuses cached base images when possible
 
@@ -381,8 +381,8 @@ containers:
 
 ## Related Resources
 
-- `Dockerfile`: Multi-stage build definition
-- `pom.xml`: Maven project configuration
+- `apps/memoryleak/Dockerfile`: Multi-stage build definition
+- `apps/memoryleak/pom.xml`: Maven project configuration
 - `deployment.yaml`: Kubernetes Deployment configuration
 - `openshift-route.yaml`: Route for external access
 - `openshift-rbac.yaml`: RBAC configuration

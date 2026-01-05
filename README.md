@@ -28,6 +28,7 @@ The application uses a scheduled task that runs every 5 seconds, allocating 10MB
 
 ```bash
 # Build with Maven
+cd apps/memoryleak
 mvn clean package
 
 # Run locally
@@ -37,76 +38,36 @@ java -Xmx256m -Xms128m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./heap_d
 ## Build Docker Image
 
 ```bash
+cd apps/memoryleak
 docker build -t memory-leak-demo:1.0.0 .
 ```
 
-## Deploy to OpenShift
+## Deploy to Kubernetes/OpenShift
 
-```bash
-# Login to OpenShift (cluster-admin required for SCC creation)
-oc login -u admin
+**Deployment Order:**
 
-# Step 1: Create SecurityContextConstraints, ServiceAccount, and RBAC
-oc apply -f openshift-rbac.yaml
+1. **Create namespace**
+   ```bash
+   kubectl apply -f k8s/namespaces.yaml
+   ```
 
-# Verify SCC
-oc get scc dump-volume-privileged
-oc get sa -n memory-leak-demo dump-volume-manager
+2. **Deploy application** (for Kubernetes)
+   ```bash
+   kubectl apply -f k8s/apps/memoryleak/
+   ```
 
-# Step 2: Deploy StatefulSet (creates PriorityClass, PVC, and mounts to /mnt/dump)
-oc apply -f statefulset-volume.yaml
+3. **For OpenShift:** Apply additional RBAC and Routes
+   ```bash
+   oc apply -f openshift/rbac/scc.yaml
+   oc apply -f openshift/routes/memory-leak-app.yaml
+   ```
 
-# Verify StatefulSet is running and ready
-oc get statefulset -n memory-leak-demo
-oc get pvc -n memory-leak-demo
-oc get priorityclass dump-volume-critical
+4. **Verify deployment**
+   ```bash
+   kubectl get pods -n memory-leak-demo
+   ```
 
-# Step 3: (Optional) Deploy S3 Uploader for automatic backup
-# Edit credentials first
-vi s3-uploader-statefulset.yaml
-
-oc apply -f s3-uploader-statefulset.yaml
-
-# Verify S3 uploader
-oc get statefulset -n memory-leak-demo heap-dump-s3-uploader
-oc logs -n memory-leak-demo -l app=s3-uploader
-
-# Step 4: Deploy the application (will wait for StatefulSet via init container)
-oc apply -f deployment.yaml
-
-# Check the deployment status
-oc get pods -n memory-leak-demo
-
-# Check init container (should complete quickly if StatefulSet is ready)
-oc logs -n memory-leak-demo -l app=memory-leak-app -c wait-for-volume-manager
-
-# Watch the application logs
-oc logs -f -n memory-leak-demo deployment/memory-leak-app
-
-# Step 5: Create Route for external access
-oc apply -f openshift-route.yaml
-
-# Get Route URL
-ROUTE_URL=$(oc get route -n memory-leak-demo memory-leak-app -o jsonpath='{.spec.host}')
-echo "Application URL: https://$ROUTE_URL"
-
-# Check health endpoint
-curl -k https://$ROUTE_URL/health
-
-# After OOM, access the heap dump
-POD_NAME=$(oc get pod -n memory-leak-demo -l app=memory-leak-app -o jsonpath='{.items[0].metadata.name}')
-oc exec -n memory-leak-demo $POD_NAME -- ls -lh /dumps/
-
-# Copy heap dump to local machine
-oc cp -n memory-leak-demo $POD_NAME:/dumps/heap_dump.hprof ./heap_dump.hprof
-
-# Alternative: Access from StatefulSet
-oc exec -n memory-leak-demo statefulset/dump-volume-manager -- \
-  ls -lh /host/mnt/dump/memory-leak-demo/
-
-# If S3 uploader is enabled, check S3 bucket
-aws s3 ls s3://heap-dumps/memory-leak-demo/ --recursive --human-readable
-```
+For detailed deployment instructions, see [k8s/README.md](k8s/README.md), [helm/README.md](helm/README.md), or [openshift/README.md](openshift/README.md).
 
 ## Analyze Heap Dump
 
@@ -133,48 +94,49 @@ oc delete namespace memory-leak-demo
 
 ## Architecture
 
-The application uses a multi-tier approach with guaranteed startup order:
+The application uses a multi-tier approach with guaranteed startup order. For detailed architecture documentation, see [docs/deployments/](docs/deployments/).
 
-1. **SecurityContextConstraints & RBAC** (`openshift-rbac.yaml`):
-   - SCC: `dump-volume-privileged` for StatefulSet privileged operations
-   - ServiceAccount: `dump-volume-manager`
-   - ClusterRole & ClusterRoleBinding for SCC usage
+**Key Components:**
 
-2. **PriorityClass** (`statefulset-volume.yaml`):
-   - Priority value: 1,000,000 (high priority)
-   - Ensures StatefulSets are scheduled before application pods
+1. **Application** (`apps/memoryleak/`) - Spring Boot memory leak demo
+2. **Kubernetes Manifests** (`k8s/`) - Complete K8s deployment configs
+3. **Helm Charts** (`helm/`) - Templated deployments for multi-environment
+4. **OpenShift Configs** (`openshift/`) - OpenShift-specific resources (SCC, Routes, BuildConfigs)
+5. **Documentation** (`docs/`) - Complete setup, deployment, and architecture guides
 
-3. **Volume Manager StatefulSet** (`statefulset-volume.yaml`):
-   - Uses ServiceAccount with SCC permissions
-   - Creates a 10Gi PersistentVolumeClaim
-   - Mounts PVC to `/pv-storage` in container
-   - Creates bidirectional bind mount to host `/mnt/dump`
-   - Creates `.ready` marker file when mount is complete
-   - Monitors mount every 30 seconds with auto-recovery
-   - Runs on every node with high priority
+## Documentation
 
-4. **S3 Uploader StatefulSet** (`s3-uploader-statefulset.yaml`) - *Optional*:
-   - Waits for volume manager `.ready` marker via init container
-   - Monitors `/mnt/dump` recursively for `.hprof` files
-   - Detects file stability (waits until file stops growing)
-   - Uploads completed heap dumps to S3 with node metadata
-   - Tracks uploaded files to prevent duplicates
-   - Runs on every node with low resource usage
+See complete documentation in `/docs` folder:
+- [Implementation Plan](docs/plan.md) - Full implementation roadmap
+- [Project Structure Status](docs/project-structure-status.md) - Current status
+- [Deployment Guides](docs/deployments/) - Kubernetes and OpenShift guides
+- [Development Setup](docs/development/) - Local development guide
+- [Commit Details](docs/commits/) - Features, fixes, and refactors
 
-5. **Application Deployment** (`deployment.yaml`):
-   - Init container waits for volume manager `.ready` marker
-   - Application pods mount host path `/mnt/dump/memory-leak-demo`
-   - Writes heap dumps to `/dumps` inside container
-   - Mapped to PV-backed storage via host path
+## Kubernetes & OpenShift Deployment
 
-6. **OpenShift Route** (`openshift-route.yaml`):
-   - OpenShift Route with TLS edge termination
-   - External access to application
+### Kubernetes
+```bash
+# Deploy using kubectl
+kubectl apply -f k8s/namespaces.yaml
+kubectl apply -f k8s/apps/memoryleak/
+```
 
-See documentation:
-- [OPENSHIFT.md](OPENSHIFT.md) - OpenShift-specific deployment guide
-- [bidirectional-mount.md](bidirectional-mount.md) - Volume architecture
-- [pod-priority.md](pod-priority.md) - Priority and startup order
-- [mount-recovery.md](mount-recovery.md) - Bind mount recovery details
-- [s3-uploader.md](s3-uploader.md) - S3 automatic backup configuration
-- [session-summary.md](session-summary.md) - Complete feature summary
+### Helm
+```bash
+# Deploy using Helm
+helm install memory-leak-demo ./helm -f helm/values-prod.yaml
+```
+
+### OpenShift
+```bash
+# Deploy using OpenShift
+oc apply -f openshift/rbac/scc.yaml
+oc apply -f k8s/apps/memoryleak/
+oc apply -f openshift/routes/memory-leak-app.yaml
+```
+
+See detailed guides:
+- [Kubernetes Documentation](k8s/README.md)
+- [Helm Documentation](helm/README.md)
+- [OpenShift Documentation](openshift/README.md)
