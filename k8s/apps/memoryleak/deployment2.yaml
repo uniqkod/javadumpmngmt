@@ -1,0 +1,144 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: memory-leak-app
+  namespace: heapdump
+  labels:
+    app: memory-leak-app
+    app.kubernetes.io/component: application
+    app.kubernetes.io/name: memory-leak-app
+    app.openshift.io/runtime: java
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: memory-leak-app
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: memory-leak-app
+        deployment: memory-leak-app
+      annotations:
+        openshift.io/scc: restricted
+    spec:
+      nodeSelector:
+        heapdump: test
+      restartPolicy: Always
+      initContainers:
+        - resources: {}
+          terminationMessagePath: /dev/termination-log
+          name: register-mount
+          command:
+            - sh
+            - '-c'
+            - |
+              echo "Registering mount with volume-mount-controller..."
+              
+              # Register mount
+              RESPONSE=$(wget -O- --header="X-API-Key: ${API_KEY}" \
+                --header="Content-Type: application/json" \
+                --post-data='{"appName":"memory-leak-demo","userId":"185"}' \
+                http://volume-mount-controller.heapdump.svc.cluster.local:8080/api/v1/app/mount/register 2>&1)
+              
+              echo "Register response: $RESPONSE"
+              
+              # Wait for mount to be ready
+              echo "Checking if mount is ready..."
+              MAX_RETRIES=30
+              RETRY_COUNT=0
+              
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                HTTP_CODE=$(wget -O- --server-response --header="X-API-Key: ${API_KEY}" \
+                  --header="Content-Type: application/json" \
+                  --post-data='{"appName":"memory-leak-demo","userId":"185"}' \
+                  http://volume-mount-controller.heapdump.svc.cluster.local:8080/api/v1/app/mount/ready 2>&1 | grep "HTTP/" | awk '{print $2}')
+                
+                if [ "$HTTP_CODE" = "200" ]; then
+                  echo "Mount is ready!"
+                  exit 0
+                fi
+                
+                echo "Mount not ready yet (HTTP $HTTP_CODE), waiting... ($RETRY_COUNT/$MAX_RETRIES)"
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                sleep 3
+              done
+              
+              echo "ERROR: Mount did not become ready in time"
+              exit 1
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: volume-mount-api-key
+                  key: api-key
+          imagePullPolicy: IfNotPresent
+          terminationMessagePolicy: File
+          image: 'registry.connect.redhat.com/sumologic/busybox:1.37.0-ubi'
+      serviceAccountName: dump-volume-manager
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 30
+      securityContext: {}
+      containers:
+        - resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            timeoutSeconds: 3
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          name: memory-leak-app
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: JAVA_OPTS
+              value: '-Xmx256m -Xms128m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dumps/$(POD_NAME).hprof'
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: heap-dumps
+              mountPath: /dumps
+          terminationMessagePolicy: File
+          image: 'image-registry.openshift-image-registry.svc:5000/heapdump/memory-leak-demo@sha256:7c1233b2bfdc3cfcf016106cbea8622c39aedcde4dcffe4c35215638d8f2d529'
+      serviceAccount: dump-volume-manager
+      volumes:
+        - name: heap-dumps
+          hostPath:
+            path: /mnt/dump/memory-leak-demo/heap
+            type: Directory
+      dnsPolicy: ClusterFirst
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+  

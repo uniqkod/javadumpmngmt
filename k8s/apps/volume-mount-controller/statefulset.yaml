@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: volume-mount-controller
+  namespace: heapdump
+  labels:
+    app: volume-mount-controller
+  annotations:
+    openshift.io/scc: dump-volume-privileged
+spec:
+  serviceName: volume-mount-controller
+  replicas: 2
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  selector:
+    matchLabels:
+      app: volume-mount-controller
+  template:
+    metadata:
+      labels:
+        app: volume-mount-controller
+    spec:
+      nodeSelector:
+        heapdump: test
+      restartPolicy: Always
+      serviceAccountName: dump-volume-manager
+      schedulerName: default-scheduler
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - volume-mount-controller
+              topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 30
+      securityContext: {}
+      initContainers:
+        - resources: {}
+          terminationMessagePath: /dev/termination-log
+          name: wait-for-volume-manager
+          command:
+            - sh
+            - '-c'
+            - |
+              echo "Waiting for dump volume manager to be ready..."
+              while [ ! -f /mnt/dump/.ready ]; do
+                echo "Volume manager not ready yet, waiting..."
+                ls -al /mnt/dump
+                sleep 3
+              done
+              echo "Volume manager is ready, proceeding with controller startup"
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: host-dumps
+              readOnly: true
+              mountPath: /mnt/dump
+          terminationMessagePolicy: File
+          image: 'registry.connect.redhat.com/sumologic/busybox:1.37.0-ubi'
+      containers:
+        - name: volume-mount-controller
+          image: 'image-registry.openshift-image-registry.svc:5000/heapdump/volume-mount-controller:latest'
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: volume-mount-api-key
+                  key: api-key
+            - name: MOUNT_BASE_PATH
+              value: /mnt/dump
+          securityContext:
+            privileged: true
+            runAsUser: 0
+            capabilities:
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            timeoutSeconds: 3
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          volumeMounts:
+            - name: host-dumps
+              mountPath: /mnt/dump
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      serviceAccount: dump-volume-manager
+      volumes:
+        - name: host-dumps
+          hostPath:
+            path: /mnt/dump
+            type: Directory
+      dnsPolicy: ClusterFirst
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      priorityClassName: dump-volume-critical
