@@ -104,6 +104,12 @@ The application uses a multi-tier approach with guaranteed startup order. For de
 4. **OpenShift Configs** (`openshift/`) - OpenShift-specific resources (SCC, Routes, BuildConfigs)
 5. **Documentation** (`docs/`) - Complete setup, deployment, and architecture guides
 
+---
+
+> **📚 For comprehensive documentation index with detailed summaries of all features, deployment guides, and setup instructions, see [docs/README.md](docs/README.md)**
+
+---
+
 ## Documentation
 
 See complete documentation in `/docs` folder:
