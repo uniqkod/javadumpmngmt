@@ -9,8 +9,8 @@ This document contains every step to create, build, deploy, and troubleshoot a S
 
 ### 1.1 Create Project Directories
 ```bash
-mkdir -p /home/ozgur/workspace/ai/javadumpmngmt
-cd /home/ozgur/workspace/ai/javadumpmngmt
+mkdir -p /home/ozgur/workspace/ai/javadumpmngmt/apps/memoryleak
+cd /home/ozgur/workspace/ai/javadumpmngmt/apps/memoryleak
 mkdir -p src/main/java/com/example/memoryleak
 mkdir -p src/main/resources
 ```
@@ -19,21 +19,21 @@ mkdir -p src/main/resources
 
 ## Step 2: Create Maven Configuration
 
-### 2.1 Create `pom.xml`
+### 2.1 Create `apps/memoryleak/pom.xml`
 Create the Maven project file with Spring Boot dependencies:
 - Spring Boot Starter Web (for REST endpoints)
 - Spring Boot Starter Actuator (for health checks)
 - Java 17
 - Spring Boot 3.2.0
 
-**File:** `pom.xml`
+**File:** `apps/memoryleak/pom.xml`
 
 ---
 
 ## Step 3: Create Java Application Files
 
 ### 3.1 Create Main Application Class
-**File:** `src/main/java/com/example/memoryleak/MemoryLeakApplication.java`
+**File:** `apps/memoryleak/src/main/java/com/example/memoryleak/MemoryLeakApplication.java`
 
 Features:
 - `@SpringBootApplication` annotation
@@ -41,7 +41,7 @@ Features:
 - Main method to start the application
 
 ### 3.2 Create Memory Leak Service
-**File:** `src/main/java/com/example/memoryleak/MemoryLeakService.java`
+**File:** `apps/memoryleak/src/main/java/com/example/memoryleak/MemoryLeakService.java`
 
 Features:
 - `@Service` annotation
@@ -58,7 +58,7 @@ Logic:
 4. Log current memory usage
 
 ### 3.3 Create Health Controller
-**File:** `src/main/java/com/example/memoryleak/HealthController.java`
+**File:** `apps/memoryleak/src/main/java/com/example/memoryleak/HealthController.java`
 
 Endpoints:
 - `GET /` - Basic status endpoint
@@ -71,8 +71,8 @@ Endpoints:
 
 ## Step 4: Create Application Configuration
 
-### 4.1 Create `application.properties`
-**File:** `src/main/resources/application.properties`
+### 4.1 Create `apps/memoryleak/application.properties`
+**File:** `apps/memoryleak/src/main/resources/application.properties`
 
 Configuration:
 - Application name: memory-leak-demo
@@ -85,7 +85,7 @@ Configuration:
 ## Step 5: Create Docker Configuration
 
 ### 5.1 Create Dockerfile
-**File:** `Dockerfile`
+**File:** `apps/memoryleak/Dockerfile`
 
 Multi-stage build:
 
@@ -110,7 +110,7 @@ Multi-stage build:
 - Entrypoint: Run Java with JAVA_OPTS
 
 ### 5.2 Create `.dockerignore`
-**File:** `.dockerignore`
+**File:** `apps/memoryleak/.dockerignore`
 
 Excludes from Docker build:
 - target/
@@ -249,7 +249,7 @@ Excludes:
 
 ### 8.1 Build with Maven (Local)
 ```bash
-cd /home/ozgur/workspace/ai/javadumpmngmt
+cd /home/ozgur/workspace/ai/javadumpmngmt/apps/memoryleak
 mvn clean package
 ```
 
@@ -276,6 +276,7 @@ Expected behavior:
 
 ### 9.1 Build the Docker Image
 ```bash
+cd /home/ozgur/workspace/ai/javadumpmngmt/apps/memoryleak
 docker build -t memory-leak-demo:1.0.0 .
 ```
 
@@ -679,9 +680,9 @@ This deletes:
 kubectl get namespace memory-leak-demo  # Should show "not found"
 ```
 
-### 15.3 Clean Local Files (Optional)
+### Step 3: Clean Local Files (Optional)
 ```bash
-cd /home/ozgur/workspace/ai/javadumpmngmt
+cd /home/ozgur/workspace/ai/javadumpmngmt/apps/memoryleak
 rm -f heap_dump.hprof gc.log
 rm -rf target/
 ```
@@ -774,12 +775,12 @@ management.metrics.export.prometheus.enabled=true
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| pom.xml | Maven configuration | 47 |
-| MemoryLeakApplication.java | Main application entry point | 15 |
-| MemoryLeakService.java | Memory leak logic | 44 |
-| HealthController.java | REST endpoints | 35 |
-| application.properties | Spring Boot configuration | 7 |
-| Dockerfile | Container image definition | 22 |
+| apps/memoryleak/pom.xml | Maven configuration | 47 |
+| apps/memoryleak/MemoryLeakApplication.java | Main application entry point | 15 |
+| apps/memoryleak/MemoryLeakService.java | Memory leak logic | 44 |
+| apps/memoryleak/HealthController.java | REST endpoints | 35 |
+| apps/memoryleak/application.properties | Spring Boot configuration | 7 |
+| apps/memoryleak/Dockerfile | Container image definition | 22 |
 | openshift-rbac.yaml | SCC, ServiceAccount, RBAC | 76 |
 | statefulset-volume.yaml | PriorityClass, PVC, Volume Manager StatefulSet | 140 |
 | s3-uploader-statefulset.yaml | ConfigMap, Secret, S3 Uploader StatefulSet | 317 |
@@ -794,7 +795,7 @@ management.metrics.export.prometheus.enabled=true
 | ocp-updates-summary.md | OpenShift migration summary | 543 |
 | session-summary.md | Complete session features summary | 723 |
 | SETUP_STEPS.md | Complete step-by-step guide | 900+ |
-| .dockerignore | Docker build exclusions | 10 |
+| apps/memoryleak/.dockerignore | Docker build exclusions | 10 |
 | .gitignore | Git exclusions | 9 |
 
 ---

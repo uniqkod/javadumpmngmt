@@ -1,0 +1,7 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: dump-volume-critical
+value: 1000000
+globalDefault: false
+description: "High priority for dump volume manager DaemonSet"

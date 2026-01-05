@@ -1,0 +1,189 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    openshift.io/scc: dump-volume-privileged
+  name: dump-volume-manager           
+  namespace: heapdump
+  labels:
+    app: dump-volume-manager
+spec:
+  serviceName: dump-volume-manager
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - kind: PersistentVolumeClaim
+      apiVersion: v1
+      metadata:
+        name: pv-storage
+        labels:
+          app: dump-volume-manager
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: ocs-storagecluster-ceph-rbd
+        volumeMode: Filesystem
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: dump-volume-manager
+    spec:
+      nodeSelector:
+        heapdump: test
+      restartPolicy: Always
+      serviceAccountName: dump-volume-manager
+      schedulerName: default-scheduler
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - dump-volume-manager
+              topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 5
+      securityContext: {}
+      containers:
+        - resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - '-c'
+                - test -f /host/mnt/dump/.ready && mountpoint -q /host/mnt/dump
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          name: volume-manager
+          command:
+            - /bin/sh
+            - '-c'
+            - |
+              echo "Starting dump volume manager..."
+              echo "Mounting PV to host /mnt/dump..."
+
+              # Create mount point on host if it doesn't exist
+              mkdir -p /host/mnt/dump
+
+              # Check if already mounted (happens on restart)
+              if mountpoint -q /host/mnt/dump; then
+                echo "WARNING: /host/mnt/dump is already a mountpoint"
+                echo "Attempting to unmount existing mount..."
+                umount /host/mnt/dump || echo "Unmount failed, will try to mount anyway"
+              fi
+
+              # Mount the PVC storage to host path using bind mount
+              if mountpoint -q /pv-storage; then
+                echo "PV is mounted at /pv-storage"
+                echo "Creating bind mount to /host/mnt/dump..."
+                mount --bind /pv-storage /host/mnt/dump
+                
+                # Verify mount succeeded
+                if mountpoint -q /host/mnt/dump; then
+                  echo "Bind mount created successfully"
+                else
+                  echo "ERROR: Bind mount failed"
+                  exit 1
+                fi
+              else
+                echo "ERROR: PV not mounted at /pv-storage"
+                exit 1
+              fi
+
+              # Set permissions
+              chmod 777 /host/mnt/dump
+              echo "Permissions set to 777"
+
+              # Display information
+              echo "Available space on /mnt/dump:"
+              df -h /host/mnt/dump
+
+              echo "Mount information:"
+              mount | grep /host/mnt/dump
+
+              # Create readiness marker file
+              echo "ready" > /host/mnt/dump/.ready
+
+              echo "Volume manager running. Keeping pod alive..."
+
+              # Monitor mount point and recreate if lost
+              while true; do
+                sleep 30
+                if ! mountpoint -q /host/mnt/dump; then
+                  echo "WARNING: Mount point lost! Attempting to remount..."
+                  mount --bind /pv-storage /host/mnt/dump
+                  if mountpoint -q /host/mnt/dump; then
+                    echo "Remount successful"
+                    echo "ready" > /host/mnt/dump/.ready
+                  else
+                    echo "ERROR: Remount failed"
+                    rm -f /host/mnt/dump/.ready 2>/dev/null || true
+                  fi
+                fi
+              done
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - '-c'
+                - mountpoint -q /host/mnt/dump
+            initialDelaySeconds: 10
+            timeoutSeconds: 1
+            periodSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+          securityContext:
+            capabilities:
+              add:
+                - SYS_ADMIN
+            privileged: true
+            runAsUser: 0
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: host-mnt
+              mountPath: /host/mnt
+              mountPropagation: Bidirectional
+            - name: pv-storage
+              mountPath: /pv-storage
+          terminationMessagePolicy: File
+          image: 'registry.connect.redhat.com/sumologic/busybox:1.37.0-ubi'
+      serviceAccount: dump-volume-manager
+      volumes:
+        - name: host-mnt
+          hostPath:
+            path: /mnt
+            type: DirectoryOrCreate
+      dnsPolicy: ClusterFirst
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      priorityClassName: dump-volume-critical
+  podManagementPolicy: OrderedReady
+  replicas: 2
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  selector:
+    matchLabels:
+      app: dump-volume-manager
+
+ 

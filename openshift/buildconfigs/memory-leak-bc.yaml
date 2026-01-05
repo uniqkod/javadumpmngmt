@@ -11,7 +11,7 @@ spec:
     git:
       uri: https://github.com/uniqkod/javadumpmngmt.git
       ref: ocp
-    contextDir: .
+    contextDir: app/memoryleak
   strategy:
     type: Docker
     dockerStrategy:
@@ -34,13 +34,4 @@ spec:
   runPolicy: Serial
   successfulBuildsHistoryLimit: 3
   failedBuildsHistoryLimit: 3
----
-apiVersion: image.openshift.io/v1
-kind: ImageStream
-metadata:
-  name: memory-leak-demo
-  labels:
-    app: memory-leak-demo
-spec:
-  lookupPolicy:
-    local: false
+

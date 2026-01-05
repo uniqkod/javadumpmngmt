@@ -1,0 +1,402 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3-uploader-config
+  labels:
+    app: s3-uploader
+data:
+  S3_BUCKET: "heap-dumps"
+  S3_PREFIX: "memory-leak-demo/"
+  WATCH_INTERVAL: "60"
+  FILE_STABLE_TIME: "120"  # Wait 2 minutes after file stops growing
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3-credentials
+  labels:
+    app: s3-uploader
+type: Opaque
+stringData:
+  # Replace with actual credentials or use IRSA/Workload Identity
+  AWS_ACCESS_KEY_ID: "AKIAIOSFODNN7EXAMPLE"
+  AWS_SECRET_ACCESS_KEY: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+  AWS_DEFAULT_REGION: "us-east-1"
+  # For S3-compatible storage (MinIO, Ceph, etc.)
+  S3_ENDPOINT_URL: ""  # e.g., "https://s3.example.com"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: heap-dump-s3-uploader
+  labels:
+    app: s3-uploader
+spec:
+  clusterIP: None
+  selector:
+    app: s3-uploader
+  ports:
+  - port: 80
+    name: placeholder
+
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  annotations:
+    openshift.io/scc: restricted
+  name: heap-dump-s3-uploader
+  namespace: heapdump
+  labels:
+    app: s3-uploader
+spec:
+  serviceName: heap-dump-s3-uploader
+  revisionHistoryLimit: 10
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - kind: PersistentVolumeClaim
+      apiVersion: v1
+      metadata:
+        name: pv-storage
+        creationTimestamp: null
+        labels:
+          app: dump-volume-s3-uploader
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: ocs-storagecluster-ceph-rbd
+        volumeMode: Filesystem
+      status:
+        phase: Pending
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: s3-uploader
+    spec:
+      nodeSelector:
+        heapdump: test
+      restartPolicy: Always
+      initContainers:
+        - resources: {}
+          terminationMessagePath: /dev/termination-log
+          name: wait-for-volume-manager
+          command:
+            - sh
+            - '-c'
+            - |
+              echo "Waiting for dump volume manager to be ready..."
+              while [ ! -f /mnt/dump/.ready ]; do
+                echo "Volume manager not ready yet, waiting..."
+                sleep 5
+              done
+
+              # Verify mount point is actually mounted
+              if ! mountpoint -q /mnt/dump; then
+                echo "ERROR: /mnt/dump is not a mount point!"
+                exit 1
+              fi
+
+              echo "Volume manager is ready, proceeding with S3 uploader startup"
+          securityContext:
+            capabilities:
+              add:
+                - SYS_ADMIN
+            privileged: true
+            runAsUser: 0
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: host-dumps
+              readOnly: true
+              mountPath: /mnt/dump
+          terminationMessagePolicy: File
+          image: 'registry.connect.redhat.com/sumologic/busybox:1.37.0-ubi'
+      serviceAccountName: dump-volume-manager
+      schedulerName: default-scheduler
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - s3-uploader
+              topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 3
+      securityContext: {}
+      containers:
+        - resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          terminationMessagePath: /dev/termination-log
+          name: s3-uploader
+          command:
+            - /bin/sh
+            - '-c'
+            - |
+              #!/bin/sh
+              set -e
+
+              echo "========================================="
+              echo "S3 Heap Dump Uploader Starting"
+              echo "========================================="
+              echo "Bucket: ${S3_BUCKET}"
+              echo "Prefix: ${S3_PREFIX}"
+              echo "Watch Interval: ${WATCH_INTERVAL}s"
+              echo "File Stable Time: ${FILE_STABLE_TIME}s"
+              echo "Node: ${POD_NAME}"
+              echo "========================================="
+
+              # Check S3 connectivity
+              if [ -n "${S3_ENDPOINT_URL}" ]; then
+                echo "Using custom S3 endpoint: ${S3_ENDPOINT_URL}"
+                S3_OPTS="--endpoint-url ${S3_ENDPOINT_URL}"
+              else
+                S3_OPTS=""
+              fi
+
+              echo "Testing S3 connection..."
+              if ! aws s3 ls s3://${S3_BUCKET}/ ${S3_OPTS} >/dev/null 2>&1; then
+                echo "WARNING: Cannot access S3 bucket. Will retry on each iteration."
+              else
+                echo "S3 bucket accessible"
+              fi
+
+              # Create state directory for tracking uploaded files
+              STATE_DIR="/pv-storage/s3-uploader-state"
+              mkdir -p ${STATE_DIR}
+
+              # Function to get file size
+              get_file_size() {
+                stat -f%z "$1" 2>/dev/null || stat -c%s "$1" 2>/dev/null || echo "0"
+              }
+
+              # Function to upload file to S3
+              upload_to_s3() {
+                local file="$1"
+                local relative_path="${file#/mnt/dump/}"
+                local s3_key="${S3_PREFIX}${relative_path}"
+                local node_name=${POD_NAME}
+                
+                
+                echo "----------------------------------------"
+                echo "Uploading: ${file}"
+                echo "To: s3://${S3_BUCKET}/${s3_key}"
+                echo "Node: ${node_name}"
+                
+                # Add metadata
+                if aws s3 cp "${file}" "s3://${S3_BUCKET}/${s3_key}" ${S3_OPTS} ${S3_OPTS_EXTRA} \
+                  --metadata "node=${node_name},upload-time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                  --storage-class STANDARD_IA 2>&1 | tee /pv-storage/upload.log; then
+                  
+                  echo "✓ Upload successful"
+                  
+                  # Mark as uploaded
+                  echo "$(date +%s)" > "${STATE_DIR}/$(echo ${file} | sed 's/\//_/g').uploaded"
+                  
+                  # Optional: Remove local file after successful upload
+                  # Uncomment if you want to save space
+                  echo "Removing local file..."
+                  rm   -f "${file}"
+                  touch "${file}.uploaded"
+
+                  return 0
+                else
+                  echo "✗ Upload failed"
+                  cat /pv-storage/upload.log
+                  return 1
+                fi
+              }
+
+              # Function to check if file is stable (not being written to)
+              is_file_stable() {
+                local file="$1"
+                local state_file="${STATE_DIR}/$(echo ${file} | sed 's/\//_/g').size"
+                
+                # Get current size
+                local current_size=$(get_file_size "${file}")
+                
+                # Check if file ends with .hprof
+                if ! echo "${file}" | grep -q '\.hprof$'; then
+                  return 1  # Not a heap dump file
+                fi
+                
+                # Check if already uploaded
+                if [ -f "${state_file}.uploaded" ]; then
+                  return 1  # Already uploaded
+                fi
+                
+                # Check if we have previous size recorded
+                if [ ! -f "${state_file}" ]; then
+                  # First time seeing this file, record size
+                  echo "${current_size}" > "${state_file}"
+                  echo "New file detected: ${file} (${current_size} bytes)"
+                  return 1  # Not stable yet
+                fi
+                
+                # Get previous size
+                local previous_size=$(cat "${state_file}")
+                
+                # Check if size changed
+                if [ "${current_size}" != "${previous_size}" ]; then
+                  # Size changed, file is still being written
+                  echo "${current_size}" > "${state_file}"
+                  echo "File still growing: ${file} (${previous_size} -> ${current_size} bytes)"
+                  return 1  # Not stable
+                fi
+                
+                # Check if file has been stable for required time
+                local state_time=$(stat -f%m "${state_file}" 2>/dev/null || stat -c%Y "${state_file}" 2>/dev/null)
+                local current_time=$(date +%s)
+                local elapsed=$((current_time - state_time))
+                
+                if [ ${elapsed} -ge ${FILE_STABLE_TIME} ]; then
+                  echo "File stable for ${elapsed}s: ${file} (${current_size} bytes)"
+                  return 0  # Stable
+                else
+                  echo "File stable but waiting: ${file} (${elapsed}/${FILE_STABLE_TIME}s)"
+                  return 1  # Not stable long enough
+                fi
+              }
+
+              # Main monitoring loop
+              echo ""
+              echo "Starting monitoring loop..."
+              echo ""
+
+              iteration=0
+              while true; do
+                iteration=$((iteration + 1))
+                echo "[$(date)] Iteration ${iteration}: Scanning for heap dumps..."
+                
+                # Find all .hprof files
+                found_files=0
+                uploaded_files=0
+                
+                if [ -d /mnt/dump ]; then
+                  # Use find to locate all .hprof files
+                  while IFS= read -r file; do
+                    found_files=$((found_files + 1))
+                    
+                    if is_file_stable "${file}"; then
+                      if upload_to_s3 "${file}"; then
+                        uploaded_files=$((uploaded_files + 1))
+                      fi
+                    fi
+                  done < <(find /mnt/dump -type f -name "*.hprof" 2>/dev/null || true)
+                else
+                  echo "WARNING: /mnt/dump not accessible"
+                fi
+                
+                if [ ${found_files} -eq 0 ]; then
+                  echo "No heap dump files found"
+                else
+                  echo "Scanned ${found_files} files, uploaded ${uploaded_files} files"
+                fi
+                
+                # Clean up old state files (older than 7 days)
+                find ${STATE_DIR} -type f -mtime +7 -delete 2>/dev/null || true
+                
+                echo "Next scan in ${WATCH_INTERVAL}s..."
+                echo ""
+                sleep ${WATCH_INTERVAL}
+              done            
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: S3_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: s3-uploader-config
+                  key: S3_BUCKET
+            - name: S3_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: s3-uploader-config
+                  key: S3_PREFIX
+            - name: WATCH_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: s3-uploader-config
+                  key: WATCH_INTERVAL
+            - name: FILE_STABLE_TIME
+              valueFrom:
+                configMapKeyRef:
+                  name: s3-uploader-config
+                  key: FILE_STABLE_TIME
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: s3-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: s3-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: s3-credentials
+                  key: AWS_DEFAULT_REGION
+            - name: S3_ENDPOINT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: s3-credentials
+                  key: S3_ENDPOINT_URL
+            - name: S3_OPTS_EXTRA
+              value: '--checksum-algorithm SHA256 '
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+            privileged: true
+            runAsUser: 0
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: host-dumps
+              mountPath: /mnt/dump
+            - name: pv-storage
+              mountPath: /pv-storage
+          terminationMessagePolicy: File
+          image: 'amazon/aws-cli:2.32.25'
+      serviceAccount: dump-volume-manager
+      volumes:
+        - name: host-dumps
+          hostPath:
+            path: /mnt/dump
+            type: Directory
+      dnsPolicy: ClusterFirst
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      priorityClassName: dump-volume-critical
+  podManagementPolicy: OrderedReady
+  replicas: 0
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  selector:
+    matchLabels:
+      app: s3-uploader
+
+ 

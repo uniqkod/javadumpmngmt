@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: heapdump
+  labels:
+    app: memory-leak-demo
+    openshift.io/cluster-monitoring: "true"
+  annotations:
+    openshift.io/description: "Memory leak demo application for heap dump testing"
+    openshift.io/display-name: "Memory Leak Demo"

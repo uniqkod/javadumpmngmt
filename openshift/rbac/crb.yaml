@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dump-volume-scc-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dump-volume-scc-user
+subjects:
+- kind: ServiceAccount
+  name: dump-volume-manager
+  namespace: heapdump  # Update this to your target namespace
