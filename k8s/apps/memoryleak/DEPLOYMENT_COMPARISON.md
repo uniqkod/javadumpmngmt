@@ -55,10 +55,11 @@ initContainers:
         echo "Registering mount with mount-access-controller..."
         
         # Register mount
-        RESPONSE=$(wget -O- --header="X-API-Key: ${API_KEY}" \
-          --header="Content-Type: application/json" \
-          --post-data='{"appName":"memory-leak-demo","userId":"185"}' \
-          http://mount-access-controller.heapdump.svc.cluster.local:8080/api/v1/app/mount/register 2>&1)
+        RESPONSE=$(curl -s -X POST \
+          -H "X-API-Key: ${API_KEY}" \
+          -H "Content-Type: application/json" \
+          -d '{"appName":"memory-leak-demo","userId":"185"}' \
+          http://mount-access-controller.heapdump.svc.cluster.local:8080/api/v1/app/mount/register)
         
         echo "Register response: $RESPONSE"
         
@@ -68,10 +69,11 @@ initContainers:
         RETRY_COUNT=0
         
         while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-          HTTP_CODE=$(wget -O- --server-response --header="X-API-Key: ${API_KEY}" \
-            --header="Content-Type: application/json" \
-            --post-data='{"appName":"memory-leak-demo","userId":"185"}' \
-            http://mount-access-controller.heapdump.svc.cluster.local:8080/api/v1/app/mount/ready 2>&1 | grep "HTTP/" | awk '{print $2}')
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "X-API-Key: ${API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"appName":"memory-leak-demo","userId":"185"}' \
+            http://mount-access-controller.heapdump.svc.cluster.local:8080/api/v1/app/mount/ready)
           
           if [ "$HTTP_CODE" = "200" ]; then
             echo "Mount is ready!"
