@@ -1,0 +1,28 @@
+# NFS Mount Manager - Minimal UBI Init variant
+# Uses UBI Init which has more packages pre-installed
+
+FROM registry.access.redhat.com/ubi9/ubi-init:latest
+
+# UBI Init comes with systemd and more utilities
+# Install only NFS utilities (minimal package set)
+RUN microdnf install -y nfs-utils && \
+    microdnf clean all && \
+    rm -rf /var/cache/dnf
+
+# Verify NFS utilities are installed
+RUN mount.nfs -V && \
+    mountpoint -V && \
+    echo "NFS utilities successfully installed"
+
+# Create mount point directory
+RUN mkdir -p /mnt/nfs-dump
+
+LABEL name="nfs-mount-manager" \
+      vendor="Custom" \
+      version="1.0.0" \
+      summary="NFS mount manager with pre-installed NFS utilities" \
+      description="Container for managing NFS mounts on Kubernetes/OpenShift nodes. \
+                   Based on Red Hat UBI Init. Includes nfs-utils for mount operations."
+
+# Default command (will be overridden by StatefulSet)
+CMD ["/bin/bash"]
