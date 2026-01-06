@@ -24,6 +24,29 @@ A Spring Boot application that deliberately causes memory leaks to demonstrate O
 
 The application uses a scheduled task that runs every 5 seconds, allocating 10MB of memory each time and storing it in a static list that never gets garbage collected. With a 256MB heap, it will crash in approximately 2-3 minutes.
 
+## Documentation
+
+See complete documentation in `/docs` folder:
+- [Implementation Plan](docs/plan.md) - Full implementation roadmap
+- [Project Structure Status](docs/project-structure-status.md) - Current status
+- [Deployment Guides](docs/deployments/) - Kubernetes and OpenShift guides
+- [Development Setup](docs/development/) - Local development guide
+- [Commit Details](docs/commits/) - Features, fixes, and refactors
+
+### Implemented Features
+
+Detailed feature documentation in [docs/commits/features/](docs/commits/features/):
+
+- [Bidirectional Mount](docs/commits/features/bidirectional-mount.md) - Host path volume propagation for dump storage
+- [Mount Access Controller](docs/commits/features/mount-access-controller.md) - API-based permission management for shared volumes
+- [NFS Mount Solution](docs/commits/features/nfs-mount-solution.md) - NFS-based storage eliminating privileged app containers ⭐
+- [Mount Recovery](docs/commits/features/mount-recovery.md) - Automatic remount on volume manager restart
+- [S3 Uploader](docs/commits/features/s3-uploader.md) - Automatic heap dump backup to S3
+- [Pod Priority](docs/commits/features/pod-priority.md) - Guaranteed startup order for infrastructure pods
+- [BuildConfig](docs/commits/features/buildconfig.md) - OpenShift Source-to-Image builds
+- [OpenShift Updates](docs/commits/features/ocp-updates-summary.md) - OpenShift-specific enhancements
+- [Branch Creation](docs/commits/features/opc-branch-creation-summary.md) - OpenShift release branch summary
+
 ## Build and Run Locally
 
 ```bash
@@ -104,34 +127,9 @@ The application uses a multi-tier approach with guaranteed startup order. For de
 4. **OpenShift Configs** (`openshift/`) - OpenShift-specific resources (SCC, Routes, BuildConfigs)
 5. **Documentation** (`docs/`) - Complete setup, deployment, and architecture guides
 
----
+ 
 
-> **📚 For comprehensive documentation index with detailed summaries of all features, deployment guides, and setup instructions, see [docs/README.md](docs/README.md)**
 
----
-
-## Documentation
-
-See complete documentation in `/docs` folder:
-- [Implementation Plan](docs/plan.md) - Full implementation roadmap
-- [Project Structure Status](docs/project-structure-status.md) - Current status
-- [Deployment Guides](docs/deployments/) - Kubernetes and OpenShift guides
-- [Development Setup](docs/development/) - Local development guide
-- [Commit Details](docs/commits/) - Features, fixes, and refactors
-
-### Implemented Features
-
-Detailed feature documentation in [docs/commits/features/](docs/commits/features/):
-
-- [Bidirectional Mount](docs/commits/features/bidirectional-mount.md) - Host path volume propagation for dump storage
-- [Mount Access Controller](docs/commits/features/mount-access-controller.md) - API-based permission management for shared volumes
-- [NFS Mount Solution](docs/commits/features/nfs-mount-solution.md) - NFS-based storage eliminating privileged app containers ⭐
-- [Mount Recovery](docs/commits/features/mount-recovery.md) - Automatic remount on volume manager restart
-- [S3 Uploader](docs/commits/features/s3-uploader.md) - Automatic heap dump backup to S3
-- [Pod Priority](docs/commits/features/pod-priority.md) - Guaranteed startup order for infrastructure pods
-- [BuildConfig](docs/commits/features/buildconfig.md) - OpenShift Source-to-Image builds
-- [OpenShift Updates](docs/commits/features/ocp-updates-summary.md) - OpenShift-specific enhancements
-- [Branch Creation](docs/commits/features/opc-branch-creation-summary.md) - OpenShift release branch summary
 
 ## Kubernetes & OpenShift Deployment
 
