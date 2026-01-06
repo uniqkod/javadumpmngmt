@@ -158,6 +158,58 @@ rpm -qa | grep nfs-utils
 ./build.sh Dockerfile.fedora
 ```
 
+### SSL/TLS Handshake Errors During Build
+
+**Symptoms:**
+```
+Error: error creating build container: SSL handshake error
+Failed to download metadata for repo 'fedora'
+```
+
+**Causes:**
+- Corporate proxy/firewall intercepting SSL
+- Outdated CA certificates on host
+- Network security policies
+
+**Solutions:**
+
+**Option 1: Update CA certificates in Dockerfile (Already included)**
+```dockerfile
+RUN dnf install -y ca-certificates && dnf clean all
+RUN update-ca-trust
+```
+
+**Option 2: Disable TLS verification (temporary workaround)**
+```bash
+NO_TLS_VERIFY=true ./build.sh
+```
+
+**Option 3: Configure proxy if behind corporate firewall**
+```bash
+# Set proxy environment variables
+export HTTP_PROXY=http://proxy.company.com:8080
+export HTTPS_PROXY=http://proxy.company.com:8080
+export NO_PROXY=localhost,127.0.0.1
+
+# Build with proxy
+podman build --build-arg HTTP_PROXY=$HTTP_PROXY \
+             --build-arg HTTPS_PROXY=$HTTPS_PROXY \
+             -f Dockerfile -t nfs-mount-manager:1.0.0 .
+```
+
+**Option 4: Use host's CA certificates**
+```bash
+# Mount host CA certs during build
+podman build --volume /etc/pki/ca-trust:/etc/pki/ca-trust:ro \
+             -f Dockerfile -t nfs-mount-manager:1.0.0 .
+```
+
+**Option 5: Use CentOS Stream instead of Fedora**
+```bash
+# CentOS Stream may have better SSL compatibility
+./build.sh Dockerfile
+```
+
 ### OpenShift Build Fails
 
 Check BuildConfig is pointing to correct Dockerfile:
@@ -168,6 +220,17 @@ oc get bc nfs-mount-manager -o yaml | grep dockerfilePath
 View build logs:
 ```bash
 oc logs -f bc/nfs-mount-manager
+```
+
+### DNS Resolution Issues in Container
+
+If the container can't resolve NFS server:
+```bash
+# Check DNS from within container
+podman run --rm nfs-mount-manager:1.0.0 getent hosts nfs-server.heapdump.svc.cluster.local
+
+# Add DNS servers to build if needed
+podman build --dns 8.8.8.8 --dns 8.8.4.4 -f Dockerfile -t nfs-mount-manager:1.0.0 .
 ```
 
 ## Benefits

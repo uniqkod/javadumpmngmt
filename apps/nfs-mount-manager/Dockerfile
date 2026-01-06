@@ -4,6 +4,12 @@
 # Alternative: registry.access.redhat.com/ubi9/ubi-init:latest
 FROM quay.io/centos/centos:stream9
 
+# Install CA certificates first to fix SSL issues
+RUN dnf install -y ca-certificates && dnf clean all
+
+# Update CA trust
+RUN update-ca-trust
+
 # Install NFS client utilities and required tools
 RUN dnf install -y \
     nfs-utils \

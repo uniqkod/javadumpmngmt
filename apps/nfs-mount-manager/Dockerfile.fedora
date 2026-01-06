@@ -3,6 +3,12 @@
 # Use Fedora which has excellent package availability
 FROM registry.fedoraproject.org/fedora:39
 
+# Install CA certificates first to fix SSL issues
+RUN dnf install -y ca-certificates && dnf clean all
+
+# Update CA trust
+RUN update-ca-trust
+
 # Install NFS client utilities and required tools
 RUN dnf install -y \
     nfs-utils \
@@ -19,7 +25,7 @@ RUN mount.nfs -V && \
     echo "NFS utilities successfully installed"
 
 # Create mount point directory
-RUN mkdir -p /mnt/nfs-dump
+RUN mkdir -p /mnt/nfs-dump1
 
 LABEL name="nfs-mount-manager" \
       vendor="Custom" \
