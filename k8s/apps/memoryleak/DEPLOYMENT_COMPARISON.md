@@ -112,10 +112,13 @@ securityContext:
 
 #### deployment2.yaml
 ```yaml
-# No privileged security context needed
+securityContext:
+  runAsUser: 185
+  runAsGroup: 185
+  fsGroup: 185
 ```
 
-**Benefit:** Application runs with standard permissions, reducing security risk.
+**Benefit:** Application runs with specific UID matching mount ownership, no privileged access needed.
 
 ### Volume Configuration
 

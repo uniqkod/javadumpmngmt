@@ -118,7 +118,11 @@ spec:
                   apiVersion: v1
                   fieldPath: metadata.name
             - name: JAVA_OPTS
-              value: '-Xmx256m -Xms128m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dumps/memory-leak-demo/heap/$(POD_NAME).hprof'
+              value: '-Xmx256m -Xms128m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dumps/heap/$(POD_NAME).hprof'
+          securityContext:
+            runAsUser: 185
+            runAsGroup: 185
+            fsGroup: 185
           ports:
             - name: http
               containerPort: 8080
@@ -133,7 +137,7 @@ spec:
       volumes:
         - name: heap-dumps
           hostPath:
-            path: /mnt/dump
+            path: /mnt/dump/memory-leak-demo
             type: Directory
       dnsPolicy: ClusterFirst
   strategy:
