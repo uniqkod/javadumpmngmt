@@ -1,8 +1,7 @@
-# NFS Mount Manager Container Image
+# NFS Mount Manager Container Image - Fedora Variant
 
-# Use CentOS Stream 9 which has nfs-utils in default repos
-# Alternative: registry.access.redhat.com/ubi9/ubi-init:latest
-FROM quay.io/centos/centos:stream9
+# Use Fedora which has excellent package availability
+FROM registry.fedoraproject.org/fedora:39
 
 # Install NFS client utilities and required tools
 RUN dnf install -y \
@@ -27,7 +26,7 @@ LABEL name="nfs-mount-manager" \
       version="1.0.0" \
       summary="NFS mount manager with pre-installed NFS utilities" \
       description="Container for managing NFS mounts on Kubernetes/OpenShift nodes. \
-                   Based on CentOS Stream 9. Includes nfs-utils, util-linux for mount operations."
+                   Based on Fedora. Includes nfs-utils, util-linux for mount operations."
 
 # Default command (will be overridden by StatefulSet)
 CMD ["/bin/bash"]
