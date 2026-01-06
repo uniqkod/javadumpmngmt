@@ -1,24 +1,24 @@
 kind: Deployment
 apiVersion: apps/v1
 metadata:
-  name: memory-leak-app
+  name: memory-leak-app-2
   namespace: heapdump
   labels:
-    app: memory-leak-app
+    app: memory-leak-app-2
     app.kubernetes.io/component: application
-    app.kubernetes.io/name: memory-leak-app
+    app.kubernetes.io/name: memory-leak-app-2
     app.openshift.io/runtime: java
 spec:
   replicas: 4
   selector:
     matchLabels:
-      app: memory-leak-app
+      app: memory-leak-app-2
   template:
     metadata:
       creationTimestamp: null
       labels:
-        app: memory-leak-app
-        deployment: memory-leak-app
+        app: memory-leak-app-2
+        deployment: memory-leak-app-2
       annotations:
         openshift.io/scc: restricted
     spec:
@@ -98,7 +98,7 @@ spec:
             successThreshold: 1
             failureThreshold: 3
           terminationMessagePath: /dev/termination-log
-          name: memory-leak-app
+          name: memory-leak-app-2
           livenessProbe:
             httpGet:
               path: /health
