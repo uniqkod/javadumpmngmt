@@ -119,6 +119,20 @@ See complete documentation in `/docs` folder:
 - [Development Setup](docs/development/) - Local development guide
 - [Commit Details](docs/commits/) - Features, fixes, and refactors
 
+### Implemented Features
+
+Detailed feature documentation in [docs/commits/features/](docs/commits/features/):
+
+- [Bidirectional Mount](docs/commits/features/bidirectional-mount.md) - Host path volume propagation for dump storage
+- [Mount Access Controller](docs/commits/features/mount-access-controller.md) - API-based permission management for shared volumes
+- [NFS Mount Solution](docs/commits/features/nfs-mount-solution.md) - NFS-based storage eliminating privileged app containers ⭐
+- [Mount Recovery](docs/commits/features/mount-recovery.md) - Automatic remount on volume manager restart
+- [S3 Uploader](docs/commits/features/s3-uploader.md) - Automatic heap dump backup to S3
+- [Pod Priority](docs/commits/features/pod-priority.md) - Guaranteed startup order for infrastructure pods
+- [BuildConfig](docs/commits/features/buildconfig.md) - OpenShift Source-to-Image builds
+- [OpenShift Updates](docs/commits/features/ocp-updates-summary.md) - OpenShift-specific enhancements
+- [Branch Creation](docs/commits/features/opc-branch-creation-summary.md) - OpenShift release branch summary
+
 ## Kubernetes & OpenShift Deployment
 
 ### Kubernetes

@@ -1,0 +1,174 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    openshift.io/scc: dump-volume-privileged
+  name: nfs-mount-manager
+  namespace: heapdump
+  labels:
+    app: nfs-mount-manager
+spec:
+  serviceName: nfs-mount-manager
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: nfs-mount-manager
+    spec:
+      nodeSelector:
+        heapdump: test
+      restartPolicy: Always
+      serviceAccountName: dump-volume-manager
+      schedulerName: default-scheduler
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - nfs-mount-manager
+              topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 5
+      securityContext: {}
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - '-c'
+                - test -f /host/mnt/nfs-dump/.ready && mountpoint -q /host/mnt/nfs-dump
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          name: nfs-mounter
+          command:
+            - /bin/sh
+            - '-c'
+            - |
+              echo "Starting NFS mount manager..."
+              
+              echo "Installing NFS utils..."
+              # For RHEL/CentOS based nodes
+              nsenter --target 1 --mount --uts --ipc --net --pid -- \
+                yum install -y nfs-utils || true
+              
+              echo "Creating mount point..."
+              mkdir -p /host/mnt/nfs-dump
+              
+              # Check if already mounted (happens on restart)
+              if mountpoint -q /host/mnt/nfs-dump; then
+                echo "WARNING: /host/mnt/nfs-dump is already a mountpoint"
+                echo "Attempting to unmount existing mount..."
+                umount /host/mnt/nfs-dump || echo "Unmount failed, will try to mount anyway"
+              fi
+              
+              echo "Mounting NFS..."
+              # Get NFS server IP
+              NFS_SERVER=$(getent hosts nfs-server.heapdump.svc.cluster.local | awk '{print $1}')
+              
+              if [ -z "$NFS_SERVER" ]; then
+                echo "ERROR: Cannot resolve NFS server"
+                exit 1
+              fi
+              
+              mount -t nfs ${NFS_SERVER}:/exports /host/mnt/nfs-dump
+              
+              # Verify mount succeeded
+              if mountpoint -q /host/mnt/nfs-dump; then
+                echo "NFS mounted successfully"
+              else
+                echo "ERROR: NFS mount failed"
+                exit 1
+              fi
+              
+              # Set permissions
+              chmod 777 /host/mnt/nfs-dump
+              echo "Permissions set to 777"
+              
+              # Display information
+              echo "Available space on /mnt/nfs-dump:"
+              df -h /host/mnt/nfs-dump
+              
+              echo "Mount information:"
+              mount | grep /host/mnt/nfs-dump
+              
+              # Create readiness marker
+              touch /host/mnt/nfs-dump/.ready
+              
+              echo "NFS mount manager running. Monitoring mount..."
+              
+              # Monitor mount point and recreate if lost
+              while true; do
+                sleep 30
+                if ! mountpoint -q /host/mnt/nfs-dump; then
+                  echo "WARNING: NFS mount lost! Remounting..."
+                  mount -t nfs ${NFS_SERVER}:/exports /host/mnt/nfs-dump
+                  if mountpoint -q /host/mnt/nfs-dump; then
+                    echo "Remount successful"
+                    touch /host/mnt/nfs-dump/.ready
+                  else
+                    echo "ERROR: Remount failed"
+                    rm -f /host/mnt/nfs-dump/.ready 2>/dev/null || true
+                  fi
+                fi
+              done
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - '-c'
+                - mountpoint -q /host/mnt/nfs-dump
+            initialDelaySeconds: 10
+            timeoutSeconds: 1
+            periodSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+          securityContext:
+            capabilities:
+              add:
+                - SYS_ADMIN
+            privileged: true
+            runAsUser: 0
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: host-mnt
+              mountPath: /host/mnt
+              mountPropagation: Bidirectional
+          terminationMessagePolicy: File
+          image: 'registry.connect.redhat.com/sumologic/busybox:1.37.0-ubi'
+      serviceAccount: dump-volume-manager
+      volumes:
+        - name: host-mnt
+          hostPath:
+            path: /mnt
+            type: DirectoryOrCreate
+      dnsPolicy: ClusterFirst
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      priorityClassName: dump-volume-critical
+  podManagementPolicy: OrderedReady
+  replicas: 2
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  selector:
+    matchLabels:
+      app: nfs-mount-manager

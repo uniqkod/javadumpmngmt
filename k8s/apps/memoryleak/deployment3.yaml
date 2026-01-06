@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-leak-app-3
+  namespace: heapdump
+spec:
+  replicas: 4
+  template:
+    metadata:
+      annotations:
+        openshift.io/scc: hostmount-anyuid  # No privileged needed!
+    spec:
+      initContainers:
+      - name: register-mount
+        command:
+        - sh
+        - '-c'
+        - |
+          # Wait for NFS mount
+          while [ ! -f /mnt/nfs-dump/.ready ]; do
+            echo "Waiting for NFS mount..."
+            sleep 3
+          done
+          
+          # Register with mount-access-controller
+          curl -s -X POST \
+            -H "X-API-Key: ${API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"appName":"memory-leak-demo-3","userId":"185"}' \
+            http://nfs-mount-access-controller:8080/api/v1/app/mount/register
+          
+          # Wait for ready
+          while true; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              -H "X-API-Key: ${API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d '{"appName":"memory-leak-demo-3","userId":"185"}' \
+              http://nfs-mount-access-controller:8080/api/v1/app/mount/ready)
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Mount ready!"
+              exit 0
+            fi
+            sleep 3
+          done
+        env:
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mount-access-api-key
+              key: api-key
+        volumeMounts:
+        - name: nfs-dumps
+          mountPath: /mnt/nfs-dump
+          readOnly: true
+        image: registry.connect.redhat.com/sumologic/busybox:1.37.0-ubi
+      
+      containers:
+      - name: memory-leak-app-3
+        securityContext:
+          runAsUser: 185        # NON-PRIVILEGED! ✅
+          runAsGroup: 185
+          fsGroup: 185
+          # privileged: false   # NOT NEEDED! 🎉
+        volumeMounts:
+        - name: nfs-dumps
+          mountPath: /dumps
+        env:
+        - name: JAVA_OPTS
+          value: '-Xmx256m -Xms128m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dumps/heap/$(POD_NAME).hprof'
+      
+      volumes:
+      - name: nfs-dumps
+        hostPath:
+          path: /mnt/nfs-dump/memory-leak-demo-3
+          type: Directory
