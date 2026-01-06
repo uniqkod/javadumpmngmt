@@ -45,9 +45,18 @@ spec:
           readinessProbe:
             exec:
               command:
+                - nsenter
+                - '--target'
+                - '1'
+                - '--mount'
+                - '--uts'
+                - '--ipc'
+                - '--net'
+                - '--pid'
+                - '--'
                 - sh
                 - '-c'
-                - test -f /host/mnt/nfs-dump/.ready && mountpoint -q /host/mnt/nfs-dump
+                - 'test -f /mnt/nfs-dump/.ready && mountpoint -q /mnt/nfs-dump'
             initialDelaySeconds: 5
             timeoutSeconds: 1
             periodSeconds: 5
@@ -61,43 +70,98 @@ spec:
             - |
               echo "Starting NFS mount manager..."
               
-              echo "Installing NFS utils..."
-              # For RHEL/CentOS based nodes
-              nsenter --target 1 --mount --uts --ipc --net --pid -- \
-                yum install -y nfs-utils || true
+              echo "Installing NFS utils on host..."
+              # Install nfs-utils on the host node using nsenter
+              # Try different package managers
+              nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c '
+                if command -v dnf >/dev/null 2>&1; then
+                  dnf install -y nfs-utils 2>/dev/null || echo "DNF install failed"
+                elif command -v yum >/dev/null 2>&1; then
+                  yum install -y nfs-utils 2>/dev/null || echo "YUM install failed"
+                elif command -v rpm-ostree >/dev/null 2>&1; then
+                  # For CoreOS/RHCOS
+                  rpm-ostree install --idempotent --unchanged-exit-77 nfs-utils 2>/dev/null || echo "rpm-ostree install attempted"
+                fi
+                
+                # Verify mount.nfs is available
+                if command -v mount.nfs >/dev/null 2>&1; then
+                  echo "NFS utils available"
+                else
+                  echo "WARNING: mount.nfs not found, NFS mount may fail"
+                fi
+              '
               
-              echo "Creating mount point..."
+              echo "Creating mount point on host..."
+              nsenter --target 1 --mount --uts --ipc --net --pid -- mkdir -p /mnt/nfs-dump
+              
+              # Create symlink from container to host path
               mkdir -p /host/mnt/nfs-dump
               
               # Check if already mounted (happens on restart)
-              if mountpoint -q /host/mnt/nfs-dump; then
-                echo "WARNING: /host/mnt/nfs-dump is already a mountpoint"
+              if nsenter --target 1 --mount --uts --ipc --net --pid -- mountpoint -q /mnt/nfs-dump; then
+                echo "WARNING: /mnt/nfs-dump is already a mountpoint on host"
                 echo "Attempting to unmount existing mount..."
-                umount /host/mnt/nfs-dump || echo "Unmount failed, will try to mount anyway"
+                nsenter --target 1 --mount --uts --ipc --net --pid -- umount /mnt/nfs-dump || echo "Unmount failed, will try to mount anyway"
               fi
               
-              echo "Mounting NFS..."
+              echo "Mounting NFS on host..."
               # Get NFS server IP
               NFS_SERVER=$(getent hosts nfs-server.heapdump.svc.cluster.local | awk '{print $1}')
               
               if [ -z "$NFS_SERVER" ]; then
-                echo "ERROR: Cannot resolve NFS server"
+                echo "ERROR: Cannot resolve NFS server nfs-server.heapdump.svc.cluster.local"
+                echo "Checking DNS..."
+                getent hosts nfs-server.heapdump.svc.cluster.local || echo "DNS lookup failed"
                 exit 1
               fi
               
-              mount -t nfs ${NFS_SERVER}:/exports /host/mnt/nfs-dump
+              echo "NFS Server resolved to: ${NFS_SERVER}"
+              
+              # Mount NFS on the host using nsenter
+              nsenter --target 1 --mount --uts --ipc --net --pid -- \
+                mount -t nfs -o vers=4,rw,async,noatime ${NFS_SERVER}:/exports /mnt/nfs-dump
               
               # Verify mount succeeded
-              if mountpoint -q /host/mnt/nfs-dump; then
-                echo "NFS mounted successfully"
+              if nsenter --target 1 --mount --uts --ipc --net --pid -- mountpoint -q /mnt/nfs-dump; then
+                echo "NFS mounted successfully on host at /mnt/nfs-dump"
               else
                 echo "ERROR: NFS mount failed"
+                nsenter --target 1 --mount --uts --ipc --net --pid -- mount | grep nfs || echo "No NFS mounts found"
                 exit 1
               fi
               
-              # Set permissions
-              chmod 777 /host/mnt/nfs-dump
+              # Set permissions on host
+              nsenter --target 1 --mount --uts --ipc --net --pid -- chmod 777 /mnt/nfs-dump
               echo "Permissions set to 777"
+              
+              # Display information
+              echo "Available space on /mnt/nfs-dump:"
+              nsenter --target 1 --mount --uts --ipc --net --pid -- df -h /mnt/nfs-dump
+              
+              echo "Mount information:"
+              nsenter --target 1 --mount --uts --ipc --net --pid -- mount | grep nfs-dump
+              
+              # Create readiness marker
+              nsenter --target 1 --mount --uts --ipc --net --pid -- touch /mnt/nfs-dump/.ready
+              
+              echo "NFS mount manager running. Monitoring mount..."
+              
+              # Monitor mount point and recreate if lost
+              while true; do
+                sleep 30
+                if ! nsenter --target 1 --mount --uts --ipc --net --pid -- mountpoint -q /mnt/nfs-dump; then
+                  echo "WARNING: NFS mount lost! Remounting..."
+                  nsenter --target 1 --mount --uts --ipc --net --pid -- \
+                    mount -t nfs -o vers=4,rw,async,noatime ${NFS_SERVER}:/exports /mnt/nfs-dump
+                  if nsenter --target 1 --mount --uts --ipc --net --pid -- mountpoint -q /mnt/nfs-dump; then
+                    echo "Remount successful"
+                    nsenter --target 1 --mount --uts --ipc --net --pid -- touch /mnt/nfs-dump/.ready
+                  else
+                    echo "ERROR: Remount failed"
+                    nsenter --target 1 --mount --uts --ipc --net --pid -- rm -f /mnt/nfs-dump/.ready 2>/dev/null || true
+                  fi
+                fi
+              done
               
               # Display information
               echo "Available space on /mnt/nfs-dump:"
@@ -129,9 +193,18 @@ spec:
           livenessProbe:
             exec:
               command:
+                - nsenter
+                - '--target'
+                - '1'
+                - '--mount'
+                - '--uts'
+                - '--ipc'
+                - '--net'
+                - '--pid'
+                - '--'
                 - sh
                 - '-c'
-                - mountpoint -q /host/mnt/nfs-dump
+                - 'mountpoint -q /mnt/nfs-dump'
             initialDelaySeconds: 10
             timeoutSeconds: 1
             periodSeconds: 30
