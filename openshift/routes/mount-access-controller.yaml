@@ -1,0 +1,17 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mount-access-controller
+  namespace: heapdump
+  labels:
+    app: mount-access-controller
+spec:
+  host: mount-access-controller.apps.example.com
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: mount-access-controller
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Allow

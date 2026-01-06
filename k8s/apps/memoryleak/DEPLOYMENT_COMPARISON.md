@@ -4,7 +4,7 @@
 
 This document compares two deployment approaches for the memory-leak-app:
 - **deployment.yaml**: Original approach with privileged init container
-- **deployment2.yaml**: New approach using volume-mount-controller API
+- **deployment2.yaml**: New approach using mount-access-controller API
 
 ## Key Differences
 
@@ -52,13 +52,13 @@ initContainers:
       - sh
       - '-c'
       - |
-        echo "Registering mount with volume-mount-controller..."
+        echo "Registering mount with mount-access-controller..."
         
         # Register mount
         RESPONSE=$(wget -O- --header="X-API-Key: ${API_KEY}" \
           --header="Content-Type: application/json" \
           --post-data='{"appName":"memory-leak-demo","userId":"185"}' \
-          http://volume-mount-controller.heapdump.svc.cluster.local:8080/api/v1/app/mount/register 2>&1)
+          http://mount-access-controller.heapdump.svc.cluster.local:8080/api/v1/app/mount/register 2>&1)
         
         echo "Register response: $RESPONSE"
         
@@ -71,7 +71,7 @@ initContainers:
           HTTP_CODE=$(wget -O- --server-response --header="X-API-Key: ${API_KEY}" \
             --header="Content-Type: application/json" \
             --post-data='{"appName":"memory-leak-demo","userId":"185"}' \
-            http://volume-mount-controller.heapdump.svc.cluster.local:8080/api/v1/app/mount/ready 2>&1 | grep "HTTP/" | awk '{print $2}')
+            http://mount-access-controller.heapdump.svc.cluster.local:8080/api/v1/app/mount/ready 2>&1 | grep "HTTP/" | awk '{print $2}')
           
           if [ "$HTTP_CODE" = "200" ]; then
             echo "Mount is ready!"
@@ -89,7 +89,7 @@ initContainers:
       - name: API_KEY
         valueFrom:
           secretKeyRef:
-            name: volume-mount-api-key
+            name: mount-access-api-key
             key: api-key
 ```
 
@@ -200,13 +200,13 @@ Start application (privileged)
 ```
 Init Container (unprivileged)
   ↓
-Call volume-mount-controller API (register)
+Call mount-access-controller API (register)
   ↓
-Call volume-mount-controller API (ready check)
+Call mount-access-controller API (ready check)
   ↓
 Start application (unprivileged)
   ↓
-volume-mount-controller (privileged, centralized)
+mount-access-controller (privileged, centralized)
   ↓
 Creates directories with proper ownership
 ```
@@ -224,14 +224,14 @@ Creates directories with proper ownership
 
 ## Prerequisites for deployment2.yaml
 
-1. **volume-mount-controller** must be deployed and running
-2. **volume-mount-api-key** secret must exist in namespace
-3. **Service DNS** must be resolvable: `volume-mount-controller.heapdump.svc.cluster.local`
+1. **mount-access-controller** must be deployed and running
+2. **mount-access-api-key** secret must exist in namespace
+3. **Service DNS** must be resolvable: `mount-access-controller.heapdump.svc.cluster.local`
 
 ## Migration Path
 
-1. Deploy volume-mount-controller
-2. Create volume-mount-api-key secret
+1. Deploy mount-access-controller
+2. Create mount-access-api-key secret
 3. Test with deployment2.yaml
 4. Once validated, replace deployment.yaml with deployment2.yaml
 5. Remove privileged SCC requirements from application

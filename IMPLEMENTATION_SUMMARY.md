@@ -1,7 +1,7 @@
-# Implementation Summary: Volume Mount Access Controller
+# Implementation Summary: Mount Access Controller
 
 **Date:** 2026-01-05T20:51:19.206Z  
-**Feature:** Volume Mount Access Controller  
+**Feature:** Mount Access Controller  
 **Status:** ✅ Complete
 
 ## Overview
@@ -11,7 +11,7 @@ Successfully implemented a Spring Boot REST API application that manages volume 
 ## What Was Implemented
 
 ### 1. Spring Boot Application (13 files)
-- **Location:** `apps/volume-mount-controller/`
+- **Location:** `apps/mount-access-controller/`
 - **Technology Stack:**
   - Spring Boot 3.2.0
   - Java 17
@@ -47,30 +47,30 @@ Successfully implemented a Spring Boot REST API application that manages volume 
 
 ### 3. Kubernetes Manifests (3 files)
 
-**StatefulSet** (`k8s/apps/volume-mount-controller/statefulset.yaml`):
+**StatefulSet** (`k8s/apps/mount-access-controller/statefulset.yaml`):
 - 2 replicas with podAntiAffinity (one per node)
 - Privileged execution with SYS_ADMIN capability
 - Mounts `/mnt/dump` from host
 - Uses `dump-volume-critical` priority class
 - Resource limits: 512Mi memory, 500m CPU
 
-**Service** (`k8s/apps/volume-mount-controller/service.yaml`):
+**Service** (`k8s/apps/mount-access-controller/service.yaml`):
 - ClusterIP type
 - `internalTrafficPolicy: Local` for node-local routing
 - `sessionAffinity: ClientIP` for sticky sessions
 
-**Secret** (`k8s/apps/volume-mount-controller/secret.yaml`):
+**Secret** (`k8s/apps/mount-access-controller/secret.yaml`):
 - Stores API key for authentication
 - Referenced by StatefulSet environment variable
 
 ### 4. OpenShift Resources (3 files)
 
-- **ImageStream**: `volume-mount-controller-is.yaml`
-- **BuildConfig**: `volume-mount-controller-bc.yaml`
+- **ImageStream**: `mount-access-controller-is.yaml`
+- **BuildConfig**: `mount-access-controller-bc.yaml`
   - Source: GitHub repository
-  - Context: `apps/volume-mount-controller`
+  - Context: `apps/mount-access-controller`
   - Strategy: Docker build
-- **Route**: `volume-mount-controller.yaml`
+- **Route**: `mount-access-controller.yaml`
   - TLS edge termination
   - External access to API
 
@@ -109,8 +109,8 @@ Successfully implemented a Spring Boot REST API application that manages volume 
 │                                             │
 │  ┌───────────────────────────────────────┐ │
 │  │  StatefulSet (2 replicas)             │ │
-│  │  - volume-mount-controller-0 (node-1) │ │
-│  │  - volume-mount-controller-1 (node-2) │ │
+│  │  - mount-access-controller-0 (node-1) │ │
+│  │  - mount-access-controller-1 (node-2) │ │
 │  └───────────────────────────────────────┘ │
 │                    ▲                        │
 │                    │                        │
@@ -125,7 +125,7 @@ Successfully implemented a Spring Boot REST API application that manages volume 
 │  └───────────────────────────────────────┘ │
 │                                             │
 │  Volume: /mnt/dump (hostPath)               │
-│  Secret: volume-mount-api-key               │
+│  Secret: mount-access-api-key               │
 └─────────────────────────────────────────────┘
 ```
 
@@ -133,7 +133,7 @@ Successfully implemented a Spring Boot REST API application that manages volume 
 
 ### Register Mount
 ```bash
-curl -X POST https://volume-mount-controller/api/v1/app/mount/register \
+curl -X POST https://mount-access-controller/api/v1/app/mount/register \
   -H "X-API-Key: your-key" \
   -H "Content-Type: application/json" \
   -d '{"appName": "my-app", "userId": "1000"}'
@@ -141,7 +141,7 @@ curl -X POST https://volume-mount-controller/api/v1/app/mount/register \
 
 ### Check Readiness
 ```bash
-curl -X POST https://volume-mount-controller/api/v1/app/mount/ready \
+curl -X POST https://mount-access-controller/api/v1/app/mount/ready \
   -H "X-API-Key: your-key" \
   -H "Content-Type: application/json" \
   -d '{"appName": "my-app", "userId": "1000"}'
@@ -163,8 +163,8 @@ curl -X POST https://volume-mount-controller/api/v1/app/mount/ready \
 
 ## Related Documentation
 
-- Feature specification: `docs/commits/features/volume-mount-access-controller.md`
-- Application README: `apps/volume-mount-controller/README.md`
+- Feature specification: `docs/commits/features/mount-access-controller.md`
+- Application README: `apps/mount-access-controller/README.md`
 - Project README: `README.md`
 
 ---

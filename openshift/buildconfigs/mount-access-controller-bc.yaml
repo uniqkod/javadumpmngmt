@@ -1,0 +1,28 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: mount-access-controller
+  namespace: heapdump
+  labels:
+    app: mount-access-controller
+    app.kubernetes.io/name: mount-access-controller
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/uniqkod/javadumpmngmt.git
+      ref: main
+    contextDir: apps/mount-access-controller
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+      noCache: false
+      forcePull: false
+  output:
+    to:
+      kind: ImageStreamTag
+      name: mount-access-controller:latest
+  runPolicy: Serial
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3

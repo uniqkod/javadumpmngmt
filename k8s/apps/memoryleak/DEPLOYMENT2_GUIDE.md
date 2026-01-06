@@ -4,20 +4,20 @@
 
 1. **Volume Mount Controller** must be deployed:
    ```bash
-   oc apply -f k8s/apps/volume-mount-controller/secret.yaml
-   oc apply -f k8s/apps/volume-mount-controller/statefulset.yaml
-   oc apply -f k8s/apps/volume-mount-controller/service.yaml
+   oc apply -f k8s/apps/mount-access-controller/secret.yaml
+   oc apply -f k8s/apps/mount-access-controller/statefulset.yaml
+   oc apply -f k8s/apps/mount-access-controller/service.yaml
    ```
 
 2. **Verify controller is running**:
    ```bash
-   oc get pods -l app=volume-mount-controller -n heapdump
-   oc logs -l app=volume-mount-controller -n heapdump
+   oc get pods -l app=mount-access-controller -n heapdump
+   oc logs -l app=mount-access-controller -n heapdump
    ```
 
 3. **Test controller API**:
    ```bash
-   oc exec -it volume-mount-controller-0 -n heapdump -- \
+   oc exec -it mount-access-controller-0 -n heapdump -- \
      curl -H "X-API-Key: change-this-to-a-secure-random-key" \
      http://localhost:8080/api/v1/health
    ```
@@ -42,14 +42,14 @@ oc logs <pod-name> -c memory-leak-app -n heapdump
 
 ```bash
 # Check controller logs for registration
-oc logs -l app=volume-mount-controller -n heapdump | grep "Registering mount"
+oc logs -l app=mount-access-controller -n heapdump | grep "Registering mount"
 
 # Verify directory was created
-oc exec -it volume-mount-controller-0 -n heapdump -- \
+oc exec -it mount-access-controller-0 -n heapdump -- \
   ls -la /mnt/dump/memory-leak-demo/heap
 
 # Check ownership
-oc exec -it volume-mount-controller-0 -n heapdump -- \
+oc exec -it mount-access-controller-0 -n heapdump -- \
   stat /mnt/dump/memory-leak-demo/heap
 ```
 
@@ -69,7 +69,7 @@ oc logs <pod-name> -c register-mount -n heapdump
 ### Mount Not Ready
 ```bash
 # Manually test ready endpoint
-oc exec -it volume-mount-controller-0 -n heapdump -- \
+oc exec -it mount-access-controller-0 -n heapdump -- \
   curl -X POST -H "X-API-Key: your-key" \
   -H "Content-Type: application/json" \
   -d '{"appName":"memory-leak-demo","userId":"185"}' \
@@ -78,8 +78,8 @@ oc exec -it volume-mount-controller-0 -n heapdump -- \
 
 ### Check API Key Secret
 ```bash
-oc get secret volume-mount-api-key -n heapdump -o yaml
-oc get secret volume-mount-api-key -n heapdump -o jsonpath='{.data.api-key}' | base64 -d
+oc get secret mount-access-api-key -n heapdump -o yaml
+oc get secret mount-access-api-key -n heapdump -o jsonpath='{.data.api-key}' | base64 -d
 ```
 
 ## Rollback

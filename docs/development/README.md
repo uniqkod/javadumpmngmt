@@ -134,7 +134,7 @@ cp docs/development/features/feature-name.md docs/commits/features/feature-name.
 ```markdown
 ## Git Information
 
-**Branch:** feature/volume-mount-controller
+**Branch:** feature/mount-access-controller
 **Commit Range:** abc123..def456
 
 Related commits:
@@ -226,7 +226,7 @@ If scope/timeline changes:
 ### Clear Commit Messages
 
 ```
-feat: add volume-mount-controller
+feat: add mount-access-controller
 
 - Implement controller class
 - Add mount monitoring
@@ -234,7 +234,7 @@ feat: add volume-mount-controller
 - Add K8s integration
 - Include unit tests
 
-Related: docs/development/features/volume-mount-controller.md
+Related: docs/development/features/mount-access-controller.md
 ```
 
 ### Link Pull Requests
