@@ -11,8 +11,6 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.attribute.PosixFilePermission;
-import java.util.Set;
 
 @Service
 public class MountService {
@@ -48,11 +46,13 @@ public class MountService {
                 return false;
             }
 
-            // Check ownership
-            String owner = Files.getOwner(heapPath).getName();
-            boolean isReady = owner.equals(userId);
+            // Check ownership by UID
+            Object uidObj = Files.getAttribute(heapPath, "unix:uid");
+            String ownerUid = uidObj.toString();
+            boolean isReady = ownerUid.equals(userId);
             
-            logger.info("Mount ready check for app: {}, result: {}", appName, isReady);
+            logger.info("Mount ready check for app: {}, owner UID: {}, expected UID: {}, result: {}", 
+                        appName, ownerUid, userId, isReady);
             return isReady;
             
         } catch (IOException e) {
