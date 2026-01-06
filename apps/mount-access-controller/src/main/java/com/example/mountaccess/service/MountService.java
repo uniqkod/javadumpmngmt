@@ -30,6 +30,7 @@ public class MountService {
         executeCommand("mkdir", "-p", heapPath.toString());
         
         // Change ownership
+        executeCommand("chown", "-R", userId + ":" + userId, appPath.toString());
         executeCommand("chown", "-R", userId + ":" + userId, heapPath.toString());
 
         logger.info("Successfully registered mount for app: {}", appName);
