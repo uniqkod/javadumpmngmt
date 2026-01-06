@@ -20,7 +20,7 @@ spec:
         app: memory-leak-app-2
         deployment: memory-leak-app-2
       annotations:
-        openshift.io/scc: restricted
+        openshift.io/scc: hostmount-anyuid
     spec:
       nodeSelector:
         heapdump: test

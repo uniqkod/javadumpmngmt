@@ -181,9 +181,10 @@ JAVA_OPTS: '-Xmx256m -Xms128m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/
 | Aspect | deployment.yaml | deployment2.yaml |
 |--------|----------------|------------------|
 | Init Container Privilege | ✗ Root required | ✓ No privilege |
-| Main Container Privilege | ✗ Privileged | ✓ Standard |
+| Main Container Privilege | ✗ Privileged | ✓ UID 185 (non-privileged) |
 | Authentication | File-based (.ready) | API Key based |
 | Authorization | Filesystem | Centralized API |
+| OpenShift SCC | dump-volume-privileged | hostmount-anyuid |
 | Attack Surface | Larger | Smaller |
 
 ## Architecture Comparison
