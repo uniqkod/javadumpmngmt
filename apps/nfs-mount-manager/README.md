@@ -8,26 +8,38 @@ This image includes all necessary NFS utilities to mount NFS shares on host node
 
 ## Base Image Options
 
-We provide two Dockerfile variants:
+We provide **three** Dockerfile variants with different base images:
 
-### 1. Dockerfile (CentOS Stream 9) - **Recommended**
+### 1. Dockerfile (CentOS Stream 9) - **Recommended for Production**
 ```dockerfile
 FROM quay.io/centos/centos:stream9
 ```
-- ✅ Free and open source
 - ✅ RHEL-compatible
-- ✅ nfs-utils in default repos
 - ✅ Enterprise-ready
+- ✅ nfs-utils in default repos
+- ✅ Good registry reliability
 - Size: ~280MB
 
-### 2. Dockerfile.fedora (Fedora 39) - **Alternative**
+### 2. Dockerfile.fedora (Fedora 39) - **Latest Packages**
 ```dockerfile
-FROM registry.fedoraproject.org/fedora:39
+FROM quay.io/fedora/fedora:39
 ```
 - ✅ Latest packages
 - ✅ Excellent package availability
 - ✅ Fast updates
+- ✅ Using quay.io mirror (reliable)
 - Size: ~300MB
+
+### 3. Dockerfile.alpine (Alpine 3.19) - **Lightweight** ⭐
+```dockerfile
+FROM docker.io/alpine:3.19
+```
+- ✅ Smallest size (~40MB!)
+- ✅ Very fast pulls
+- ✅ Minimal attack surface
+- ✅ Excellent registry reliability
+- ✅ Quick builds
+- Size: ~40MB 🚀
 
 ## Why Not UBI?
 
@@ -145,6 +157,45 @@ rpm -qa | grep nfs-utils
 
 ## Troubleshooting
 
+### Build Fails: Registry Timeout (TLS handshake timeout)
+
+**Symptoms:**
+```
+Error initializing source docker://registry.fedoraproject.org/fedora:39
+net/http: TLS handshake timeout
+```
+
+**Cause:** Network issues, slow registry, or firewall blocking access.
+
+**Solutions:**
+
+**Option 1: Use Alpine (Recommended - Fast & Reliable)** ⭐
+```bash
+./build.sh Dockerfile.alpine
+```
+Alpine uses docker.io which is highly cached and reliable. Image size is only ~40MB!
+
+**Option 2: Use CentOS Stream from quay.io**
+```bash
+./build.sh Dockerfile
+```
+quay.io is generally faster and more reliable than registry.fedoraproject.org
+
+**Option 3: Pre-pull base image**
+```bash
+# Pull base image first
+podman pull quay.io/fedora/fedora:39
+# Then build
+./build.sh Dockerfile.fedora
+```
+
+**Option 4: Use a registry mirror**
+```bash
+# Configure registry mirror in /etc/containers/registries.conf
+# Then rebuild
+./build.sh
+```
+
 ### Build Fails: "Unable to find a match: nfs-utils"
 
 **Cause:** UBI images require Red Hat subscription for additional packages.
@@ -259,11 +310,16 @@ To update packages:
 
 ## Base Image Comparison
 
-| Base Image | nfs-utils Available | Subscription | Size | Update Frequency |
-|------------|-------------------|--------------|------|------------------|
-| UBI 9 | ❌ No (requires subscription) | Required | ~220MB | Slow |
-| CentOS Stream 9 | ✅ Yes | Not required | ~280MB | Regular |
-| Fedora 39 | ✅ Yes | Not required | ~300MB | Fast |
+| Base Image | Registry | nfs-utils | Reliability | Size | Build Speed |
+|------------|----------|-----------|-------------|------|-------------|
+| Alpine 3.19 | docker.io | ✅ Yes | ⭐⭐⭐⭐⭐ | ~40MB | ⚡ Very Fast |
+| CentOS Stream 9 | quay.io | ✅ Yes | ⭐⭐⭐⭐ | ~280MB | 🐢 Medium |
+| Fedora 39 | quay.io | ✅ Yes | ⭐⭐⭐⭐ | ~300MB | 🐢 Medium |
+| UBI 9 | registry.access.redhat.com | ❌ No* | ⭐⭐⭐ | ~220MB | 🐢 Medium |
+
+*Requires Red Hat subscription
+
+**Recommended:** Use Alpine for production (smallest, fastest, most reliable)!
 
 ## Security
 

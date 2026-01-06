@@ -1,0 +1,31 @@
+# NFS Mount Manager Container Image - Alpine Variant (Lightweight)
+
+# Use Alpine Linux (minimal, fast, reliable)
+FROM docker.io/alpine:3.19
+
+# Install NFS client utilities and required tools
+RUN apk add --no-cache \
+    nfs-utils \
+    util-linux \
+    bash \
+    coreutils \
+    findutils \
+    curl \
+    && echo "NFS utilities successfully installed"
+
+# Verify NFS utilities are installed
+RUN mount.nfs -V && \
+    mountpoint -V
+
+# Create mount point directory
+RUN mkdir -p /mnt/nfs-dump
+
+LABEL name="nfs-mount-manager" \
+      vendor="Custom" \
+      version="1.0.0" \
+      summary="NFS mount manager with pre-installed NFS utilities" \
+      description="Container for managing NFS mounts on Kubernetes/OpenShift nodes. \
+                   Based on Alpine Linux. Includes nfs-utils, util-linux for mount operations."
+
+# Default command (will be overridden by StatefulSet)
+CMD ["/bin/bash"]

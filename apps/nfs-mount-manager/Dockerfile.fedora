@@ -1,7 +1,7 @@
 # NFS Mount Manager Container Image - Fedora Variant
 
-# Use Fedora which has excellent package availability
-FROM registry.fedoraproject.org/fedora:39
+# Use Fedora from quay.io mirror (more reliable than registry.fedoraproject.org)
+FROM quay.io/fedora/fedora:39
 
 # Install CA certificates first to fix SSL issues
 RUN dnf install -y ca-certificates && dnf clean all
@@ -25,7 +25,7 @@ RUN mount.nfs -V && \
     echo "NFS utilities successfully installed"
 
 # Create mount point directory
-RUN mkdir -p /mnt/nfs-dump1
+RUN mkdir -p /mnt/nfs-dump
 
 LABEL name="nfs-mount-manager" \
       vendor="Custom" \
