@@ -1,0 +1,237 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    openshift.io/scc: dump-volume-privileged
+  name: nfs-mount-manager
+  namespace: heapdump
+  labels:
+    app: nfs-mount-manager
+spec:
+  serviceName: nfs-mount-manager
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: nfs-mount-manager
+    spec:
+      nodeSelector:
+        heapdump: test
+      restartPolicy: Always
+      serviceAccountName: dump-volume-manager
+      schedulerName: default-scheduler
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - nfs-mount-manager
+              topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 5
+      securityContext: {}
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          readinessProbe:
+            exec:
+              command:
+                - nsenter
+                - '--target'
+                - '1'
+                - '--mount'
+                - '--uts'
+                - '--ipc'
+                - '--net'
+                - '--pid'
+                - '--'
+                - sh
+                - '-c'
+                - 'test -f /mnt/nfs-dump/.ready && mountpoint -q /mnt/nfs-dump'
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          name: nfs-mounter
+          command:
+            - /bin/sh
+            - '-c'
+            - |
+              echo "Starting NFS mount manager (no-build mode)..."
+              echo "Installing NFS utils directly on host node..."
+              
+              # Install NFS utils on the HOST using nsenter
+              nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c '
+                # Auto-detect and use available package manager
+                if command -v dnf >/dev/null 2>&1; then
+                  echo "Using dnf..."
+                  dnf install -y nfs-utils 2>&1 || echo "Install completed with dnf"
+                else
+                  echo "ERROR: No package manager found"
+                  exit 1
+                fi
+                
+                # Verify
+                if command -v mount.nfs >/dev/null 2>&1; then
+                  echo "✅ NFS utils installed"
+                  mount.nfs -V
+                else
+                  echo "⚠️  mount.nfs not found, checking..."
+                  rpm -qa | grep nfs || echo "No NFS packages"
+                fi
+              '
+              
+              echo "Creating mount point on host..."
+              nsenter --target 1 --mount --uts --ipc --net --pid -- mkdir -p /mnt/nfs-dump
+              
+              # Check if already mounted
+              if nsenter --target 1 --mount --uts --ipc --net --pid -- mountpoint -q /mnt/nfs-dump; then
+                echo "WARNING: Already mounted, unmounting..."
+                nsenter --target 1 --mount --uts --ipc --net --pid -- umount /mnt/nfs-dump || echo "Unmount failed"
+              fi
+              
+              echo "Resolving NFS server..."
+              NFS_SERVER=$(getent hosts nfs-server.heapdump.svc.cluster.local | awk '{print $1}')
+              
+              if [ -z "$NFS_SERVER" ]; then
+                echo "❌ ERROR: Cannot resolve NFS server"
+                exit 1
+              fi
+              
+              echo "✅ NFS Server: ${NFS_SERVER}"
+              
+              echo "Mounting NFS on host..."
+              nsenter --target 1 --mount --uts --ipc --net --pid -- \
+                mount -t nfs -o vers=4,rw,async,noatime ${NFS_SERVER}:/exports /mnt/nfs-dump
+              
+              # Verify
+              if nsenter --target 1 --mount --uts --ipc --net --pid -- mountpoint -q /mnt/nfs-dump; then
+                echo "✅ NFS mounted successfully"
+              else
+                echo "❌ ERROR: Mount failed"
+                nsenter --target 1 --mount --uts --ipc --net --pid -- mount | grep nfs || echo "No NFS mounts"
+                exit 1
+              fi
+              
+              # Set permissions
+              nsenter --target 1 --mount --uts --ipc --net --pid -- chmod 777 /mnt/nfs-dump
+              
+              # Display info
+              nsenter --target 1 --mount --uts --ipc --net --pid -- df -h /mnt/nfs-dump
+              
+              # Create readiness marker
+              nsenter --target 1 --mount --uts --ipc --net --pid -- touch /mnt/nfs-dump/.ready
+              
+              echo "✅ Ready. Monitoring mount..."
+              
+              # Monitor loop
+              while true; do
+                sleep 30
+                if ! nsenter --target 1 --mount --uts --ipc --net --pid -- mountpoint -q /mnt/nfs-dump; then
+                  echo "⚠️  Mount lost! Remounting..."
+                  nsenter --target 1 --mount --uts --ipc --net --pid -- \
+                    mount -t nfs -o vers=4,rw,async,noatime ${NFS_SERVER}:/exports /mnt/nfs-dump
+                  if nsenter --target 1 --mount --uts --ipc --net --pid -- mountpoint -q /mnt/nfs-dump; then
+                    echo "✅ Remounted"
+                    nsenter --target 1 --mount --uts --ipc --net --pid -- touch /mnt/nfs-dump/.ready
+                  else
+                    echo "❌ Remount failed"
+                    nsenter --target 1 --mount --uts --ipc --net --pid -- rm -f /mnt/nfs-dump/.ready 2>/dev/null || true
+                  fi
+                fi
+              done
+              
+              # Display information
+              echo "Available space on /mnt/nfs-dump:"
+              df -h /host/mnt/nfs-dump
+              
+              echo "Mount information:"
+              mount | grep /host/mnt/nfs-dump
+              
+              # Create readiness marker
+              touch /host/mnt/nfs-dump/.ready
+              
+              echo "NFS mount manager running. Monitoring mount..."
+              
+              # Monitor mount point and recreate if lost
+              while true; do
+                sleep 30
+                if ! mountpoint -q /host/mnt/nfs-dump; then
+                  echo "WARNING: NFS mount lost! Remounting..."
+                  mount -t nfs ${NFS_SERVER}:/exports /host/mnt/nfs-dump
+                  if mountpoint -q /host/mnt/nfs-dump; then
+                    echo "Remount successful"
+                    touch /host/mnt/nfs-dump/.ready
+                  else
+                    echo "ERROR: Remount failed"
+                    rm -f /host/mnt/nfs-dump/.ready 2>/dev/null || true
+                  fi
+                fi
+              done
+          livenessProbe:
+            exec:
+              command:
+                - nsenter
+                - '--target'
+                - '1'
+                - '--mount'
+                - '--uts'
+                - '--ipc'
+                - '--net'
+                - '--pid'
+                - '--'
+                - sh
+                - '-c'
+                - 'mountpoint -q /mnt/nfs-dump'
+            initialDelaySeconds: 10
+            timeoutSeconds: 1
+            periodSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+          securityContext:
+            capabilities:
+              add:
+                - SYS_ADMIN
+            privileged: true
+            runAsUser: 0
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: host-mnt
+              mountPath: /host/mnt
+              mountPropagation: Bidirectional
+          terminationMessagePolicy: File
+          # Use standard UBI Minimal - no custom image build needed!
+          image: 'registry.access.redhat.com/ubi9/ubi-minimal:latest'
+      serviceAccount: dump-volume-manager
+      volumes:
+        - name: host-mnt
+          hostPath:
+            path: /mnt
+            type: DirectoryOrCreate
+      dnsPolicy: ClusterFirst
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      priorityClassName: dump-volume-critical
+  podManagementPolicy: OrderedReady
+  replicas: 2
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  selector:
+    matchLabels:
+      app: nfs-mount-manager
