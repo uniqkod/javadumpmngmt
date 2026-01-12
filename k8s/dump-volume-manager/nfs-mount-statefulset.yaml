@@ -62,25 +62,35 @@ spec:
               echo "Starting NFS mount manager..."
               echo "Running as privileged root container with hostPID"
               
-              # Install NFS utils (container has microdnf in UBI Minimal)
-              echo "Installing NFS utils..."
-              if command -v microdnf >/dev/null 2>&1; then
-                microdnf install -y nfs-utils 2>&1 || echo "Install completed"
-              elif command -v dnf >/dev/null 2>&1; then
-                dnf install -y nfs-utils 2>&1 || echo "Install completed"
-              elif command -v yum >/dev/null 2>&1; then
-                yum install -y nfs-utils 2>&1 || echo "Install completed"
-              else
-                echo "⚠️  No package manager found, assuming nfs-utils pre-installed"
-              fi
-              
-              # Verify NFS utilities
+              # Check if NFS utils already installed
+              echo "Checking for NFS utilities..."
               if command -v mount.nfs >/dev/null 2>&1; then
-                echo "✅ NFS utils available"
+                echo "✅ NFS utils already installed"
                 mount.nfs -V
               else
-                echo "⚠️  mount.nfs not found"
-                rpm -qa | grep nfs || echo "No NFS packages"
+                echo "NFS utils not found, installing..."
+                
+                # Install NFS utils (container has microdnf in UBI Minimal)
+                if command -v microdnf >/dev/null 2>&1; then
+                  microdnf install -y nfs-utils 2>&1 || echo "Install completed"
+                elif command -v dnf >/dev/null 2>&1; then
+                  dnf install -y nfs-utils 2>&1 || echo "Install completed"
+                elif command -v yum >/dev/null 2>&1; then
+                  yum install -y nfs-utils 2>&1 || echo "Install completed"
+                else
+                  echo "❌ ERROR: No package manager found and nfs-utils not installed"
+                  exit 1
+                fi
+                
+                # Verify installation succeeded
+                if command -v mount.nfs >/dev/null 2>&1; then
+                  echo "✅ NFS utils installed successfully"
+                  mount.nfs -V
+                else
+                  echo "❌ ERROR: NFS utils installation failed"
+                  rpm -qa | grep nfs || echo "No NFS packages found"
+                  exit 1
+                fi
               fi
               
               # Create mount point on host (via hostPath mount)
