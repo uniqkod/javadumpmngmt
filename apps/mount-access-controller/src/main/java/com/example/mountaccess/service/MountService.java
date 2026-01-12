@@ -20,8 +20,11 @@ public class MountService {
     @Value("${mount.base.path:/mnt/dump}")
     private String mountBasePath;
 
+    @Value("${mount.ownership.op:chown}")
+    private String ownershipOp;
+
     public void registerMount(String appName, String userId) throws IOException {
-        logger.info("Registering mount for app: {}, user: {}", appName, userId);
+        logger.info("Registering mount for app: {}, user: {}, op: {}", appName, userId, ownershipOp);
 
         Path appPath = Paths.get(mountBasePath, appName);
         Path heapPath = Paths.get(mountBasePath, appName, "heap");
@@ -29,15 +32,24 @@ public class MountService {
         // Create directories
         executeCommand("mkdir", "-p", heapPath.toString());
         
-        // Change ownership
-        executeCommand("chown", "-R", userId + ":" + userId, appPath.toString());
-        executeCommand("chown", "-R", userId + ":" + userId, heapPath.toString());
+        // Set ownership or permissions based on operation mode
+        if ("chmod".equalsIgnoreCase(ownershipOp)) {
+            // NFS mode - use chmod 777 (no chown support)
+            logger.info("Using chmod mode for NFS compatibility");
+            executeCommand("chmod", "-R", "777", appPath.toString());
+            executeCommand("chmod", "-R", "777", heapPath.toString());
+        } else {
+            // Default chown mode - change ownership
+            logger.info("Using chown mode");
+            executeCommand("chown", "-R", userId + ":" + userId, appPath.toString());
+            executeCommand("chown", "-R", userId + ":" + userId, heapPath.toString());
+        }
 
         logger.info("Successfully registered mount for app: {}", appName);
     }
 
     public boolean isMountReady(String appName, String userId) {
-        logger.info("Checking mount readiness for app: {}, user: {}", appName, userId);
+        logger.info("Checking mount readiness for app: {}, user: {}, op: {}", appName, userId, ownershipOp);
 
         try {
             Path heapPath = Paths.get(mountBasePath, appName, "heap");
@@ -47,14 +59,21 @@ public class MountService {
                 return false;
             }
 
-            // Check ownership by UID
-            Object uidObj = Files.getAttribute(heapPath, "unix:uid");
-            String ownerUid = uidObj.toString();
-            boolean isReady = ownerUid.equals(userId);
-            
-            logger.info("Mount ready check for app: {}, owner UID: {}, expected UID: {}, result: {}", 
-                        appName, ownerUid, userId, isReady);
-            return isReady;
+            if ("chmod".equalsIgnoreCase(ownershipOp)) {
+                // In chmod mode, just check if directory exists and is writable
+                boolean isWritable = Files.isWritable(heapPath);
+                logger.info("Mount ready check (chmod mode) for app: {}, writable: {}", appName, isWritable);
+                return isWritable;
+            } else {
+                // In chown mode, check ownership by UID
+                Object uidObj = Files.getAttribute(heapPath, "unix:uid");
+                String ownerUid = uidObj.toString();
+                boolean isReady = ownerUid.equals(userId);
+                
+                logger.info("Mount ready check (chown mode) for app: {}, owner UID: {}, expected UID: {}, result: {}", 
+                            appName, ownerUid, userId, isReady);
+                return isReady;
+            }
             
         } catch (IOException e) {
             logger.error("Error checking mount readiness", e);

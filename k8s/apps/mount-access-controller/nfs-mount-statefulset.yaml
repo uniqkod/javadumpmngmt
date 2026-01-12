@@ -81,6 +81,8 @@ spec:
                   key: api-key
             - name: MOUNT_BASE_PATH
               value: /mnt/nfs-dump
+            - name: MOUNT_OWNERSHIP_OP
+              value: chmod  # Use 'chmod' for NFS, 'chown' for local storage
           securityContext:
             privileged: true
             runAsUser: 0
