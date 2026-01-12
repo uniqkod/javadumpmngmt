@@ -181,8 +181,8 @@ spec:
               mountPath: /host/mnt
               mountPropagation: Bidirectional
           terminationMessagePolicy: File
-          # Use standard UBI Minimal - no custom image build needed!
-          image: 'registry.access.redhat.com/ubi9/ubi-minimal:latest'
+          # BusyBox is enough - we install nfs-utils at runtime
+          image: 'docker.io/busybox:latest'
       serviceAccount: dump-volume-manager
       volumes:
         - name: host-mnt
